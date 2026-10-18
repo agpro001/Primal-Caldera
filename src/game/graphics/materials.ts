@@ -52,6 +52,9 @@ export class MaterialCache {
   public tribalClothRed: THREE.MeshStandardMaterial;
   public tribalClothBlue: THREE.MeshStandardMaterial;
   public tribalGold: THREE.MeshStandardMaterial;
+  public mithrilSilverMaterial: THREE.MeshStandardMaterial;
+  public mithrilGoldTrimMaterial: THREE.MeshStandardMaterial;
+  public mithrilCapeMaterial: THREE.MeshStandardMaterial;
 
   constructor() {
     // 1. Biome Ground Textures
@@ -550,6 +553,45 @@ export class MaterialCache {
       roughness: 0.3,
       metalness: 0.65,
     });
+
+    // Mastercraft Mithril Armor Set (Beyond Skyrim2) PBR Materials
+    this.mithrilSilverMaterial = new THREE.MeshStandardMaterial({
+      map: createTileCanvas(128, 128, (ctx, w, h) => {
+        ctx.fillStyle = '#e0f2fe';
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = '#bae6fd';
+        ctx.lineWidth = 2;
+        for (let y = 0; y < h; y += 16) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(w / 2, y + 6);
+          ctx.lineTo(w, y);
+          ctx.stroke();
+        }
+      }),
+      color: 0xe0f2fe,
+      emissive: 0x0369a1,
+      emissiveIntensity: 0.22,
+      roughness: 0.18,
+      metalness: 0.88,
+    });
+
+    this.mithrilGoldTrimMaterial = new THREE.MeshStandardMaterial({
+      color: 0xfacc15,
+      emissive: 0xca8a04,
+      emissiveIntensity: 0.32,
+      roughness: 0.22,
+      metalness: 0.85,
+    });
+
+    this.mithrilCapeMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1d4ed8,
+      emissive: 0x1e3a8a,
+      emissiveIntensity: 0.2,
+      roughness: 0.55,
+      metalness: 0.15,
+      side: THREE.DoubleSide,
+    });
   }
 
   public dispose(): void {
@@ -581,5 +623,8 @@ export class MaterialCache {
     this.tribalClothRed.dispose();
     this.tribalClothBlue.dispose();
     this.tribalGold.dispose();
+    this.mithrilSilverMaterial.dispose();
+    this.mithrilGoldTrimMaterial.dispose();
+    this.mithrilCapeMaterial.dispose();
   }
 }

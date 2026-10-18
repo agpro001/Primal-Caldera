@@ -9,14 +9,13 @@ import type {
   BeastSpecies,
   BeastKnowledgeLevel,
   NPCId,
-  EnvironmentModelId,
 } from '../types/game.ts';
 import {
   BEASTOPEDIA_ENTRIES,
   CHARACTER_ATLAS_ENTRIES,
   ENVIRONMENT_ATLAS_ENTRIES,
+  type EnvironmentModelId,
 } from '../game/logic/beastopediaData.ts';
-import { createBeastWeakPoints } from '../game/logic/rules.ts';
 import { MaterialCache } from '../game/graphics/materials.ts';
 import {
   buildBeastModel,
@@ -47,7 +46,7 @@ export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [selectedSpecies, setSelectedSpecies] = useState<BeastSpecies>('sky_dragon');
   const [selectedCharId, setSelectedCharId] = useState<NPCId | 'hunter_koa'>('hunter_koa');
-  const [selectedEnvId, setSelectedEnvId] = useState<EnvironmentModelId>('jungle_canopy_tree');
+  const [selectedEnvId, setSelectedEnvId] = useState<EnvironmentModelId>('snow_mountain');
 
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -142,8 +141,7 @@ export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
     let hunterRig: ReturnType<typeof buildHunterModel> | null = null;
 
     if (category === 'beasts') {
-      const weakPoints = createBeastWeakPoints(selectedSpecies);
-      beastRig = buildBeastModel(selectedSpecies, matCache, weakPoints);
+      beastRig = buildBeastModel(selectedSpecies, matCache);
       const scaleMap: Record<BeastSpecies, number> = {
         raptor: 1.0,
         snapjaw: 0.72,
@@ -167,9 +165,9 @@ export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
         }
         turntable.add(hunterRig.root);
       } else {
-        const npcRig = buildTribalNPCModel(selectedCharId, matCache);
-        npcRig.root.scale.setScalar(1.38);
-        turntable.add(npcRig.root);
+        const npcGroup = buildTribalNPCModel(selectedCharId, matCache);
+        npcGroup.scale.setScalar(1.38);
+        turntable.add(npcGroup);
       }
     } else {
       const envGroup = buildEnvironmentShowcaseModel(selectedEnvId, matCache);

@@ -483,8 +483,58 @@ function drawSilhouetteAndAnatomy(
     ctx.beginPath();
     ctx.arc(32, -16, 9, 0, Math.PI * 2);
     ctx.fill();
+  } else if (id === 'hunter_koa') {
+    // Mastercraft Mithril Armor Knight Silhouette with Winged Helm, Cape & Aetherial Flight Wings
+    // Aetherial Flight Wings
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -25);
+    ctx.lineTo(-92, -68);
+    ctx.lineTo(-76, 6);
+    ctx.closePath();
+    ctx.moveTo(0, -25);
+    ctx.lineTo(92, -68);
+    ctx.lineTo(76, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Silver-Blue Mithril Helm + Winged Crest
+    ctx.fillStyle = '#e0f2fe';
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(0, -64, 18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Mithril Cuirass + Gold Filigree
+    ctx.fillStyle = '#bae6fd';
+    ctx.beginPath();
+    ctx.roundRect(-26, -42, 52, 62, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    // Mithril Greaves & Vambraces
+    ctx.strokeStyle = '#e0f2fe';
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.moveTo(-26, -32);
+    ctx.lineTo(-54, 12);
+    ctx.moveTo(26, -32);
+    ctx.lineTo(54, 8);
+    ctx.moveTo(-13, 20);
+    ctx.lineTo(-16, 78);
+    ctx.moveTo(13, 20);
+    ctx.lineTo(16, 78);
+    ctx.stroke();
   } else if (
-    id === 'hunter_koa' ||
+    id === 'chief_kael' ||
+    id === 'scout_lyra' ||
+    id === 'smith_torak' ||
+    id === 'shaman_sol' ||
     id === 'elder_kael' ||
     id === 'scout_lani' ||
     id === 'forgemaster_torak'
@@ -499,7 +549,12 @@ function drawSilhouetteAndAnatomy(
     ctx.fill();
     ctx.stroke();
     // Torso
-    ctx.fillStyle = id === 'scout_lani' ? '#0f766e' : id === 'elder_kael' ? '#7c2d12' : '#451a03';
+    ctx.fillStyle =
+      id === 'scout_lyra' || id === 'scout_lani'
+        ? '#0f766e'
+        : id === 'chief_kael' || id === 'elder_kael'
+        ? '#7c2d12'
+        : '#451a03';
     ctx.beginPath();
     ctx.roundRect(-24, -42, 48, 62, 10);
     ctx.fill();

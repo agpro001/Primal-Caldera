@@ -240,7 +240,7 @@ export class GameEngine {
     this.signalTowerProgress = saveData.signalTowerProgress;
     this.beaconLit = saveData.beaconLit;
     this.beastsHunted = [...saveData.beastsHunted];
-    this.beastKnowledge = {
+    const defaultKnowledge: Record<BeastSpecies, BeastKnowledgeLevel> = {
       raptor: 'tracked',
       brontoshell: 'tracked',
       thunderhorn: 'tracked',
@@ -248,6 +248,9 @@ export class GameEngine {
       snapjaw: 'tracked',
       sky_dragon: 'tracked',
       caldera_titan: 'tracked',
+    };
+    this.beastKnowledge = {
+      ...defaultKnowledge,
       ...(saveData.beastKnowledge ?? {}),
     };
 
@@ -415,6 +418,8 @@ export class GameEngine {
         this.cameraYaw = yaw;
       },
     };
+    (window as any).render_game_to_text = () =>
+      JSON.stringify((window as any).__gameTest.getState());
 
     // Start loop
     this.lastTime = performance.now();
