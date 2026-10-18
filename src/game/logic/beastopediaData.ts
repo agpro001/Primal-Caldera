@@ -19,6 +19,7 @@ export interface CharacterAtlasEntry {
   role: string;
   biomeName: string;
   weaponOrTool: string;
+  sketchfabEmbedUrl?: string;
   lore: string;
   traits: string[];
 }
@@ -35,15 +36,16 @@ export interface EnvironmentAtlasEntry {
 export const CHARACTER_ATLAS_ENTRIES: CharacterAtlasEntry[] = [
   {
     id: 'hunter_koa',
-    name: 'Koa the Apex Tracker (You)',
-    role: 'Lead Island Beast Hunter',
-    biomeName: 'All Island Biomes',
-    weaponOrTool: 'Flint Spear, Raptor Harpoon, Siege Lance & Caldera Glaive',
-    lore: 'Trained to read every footprint, broken fern, and telegraphed roar across the island. Koa wears articulated tribal shoulder pauldrons, war-painted war bands, and customizable prehistoric armor.',
+    name: 'Koa · Mastercraft Mithril Vanguard (You)',
+    role: 'Mithril Dragon-Knight & Island Vanguard',
+    biomeName: 'All Island Biomes & Stratospheric Airways',
+    weaponOrTool: 'Mastercraft Mithril Armor Set (Beyond Skyrim2) · Aetherial Flight Wings · Glaive',
+    sketchfabEmbedUrl: 'https://sketchfab.com/models/3ae9057e840e4da0bf05269865c29c91/embed',
+    lore: 'Clad in the ornate Mastercraft Mithril Armor Set for Beyond Skyrim2 (by Royraj Vichaidit on Sketchfab), forged from silver-blue Mithril plate with gold filigree, royal cape, and deployable Aetherial Glider Wings.',
     traits: [
       '360° Camera-Relative Movement with Calibrated Front/Back/Left/Right Joystick',
-      'Invulnerability-Frame Dodge Roll & Heavy Charged Spear Thrusts',
-      'Hunter Focus Vision (F) revealing glowing beast trails & anatomical weak points',
+      'Jump (Space) & Aetherial Flight Wings (V) with Real Thermal Updraft Lift Physics',
+      'Biologically Grounded Food (kcal), Water (mL) & Creature Egg Survival Metabolism',
     ],
   },
   {
@@ -361,6 +363,50 @@ export const BEASTOPEDIA_ENTRIES: Record<BeastSpecies, BeastopediaEntry> = {
     huntingTips: [
       'Craft the Brontoshell Carapace Plate before challenging the Thunderhorn to survive its high-voltage charges.',
       'Sinew Snare Traps interrupt its gore charge and expose its Conductive Nasal Horn at eye level.',
+    ],
+  },
+  sky_dragon: {
+    species: 'sky_dragon',
+    name: 'Aurelius, Aetherial Sky-Wyvern',
+    title: 'Flying Dragon of the Thermal Airways',
+    biomeName: 'Stratospheric Airways & Caldera Crags',
+    threatLevel: 5,
+    diet: 'Aerial Apex Carnivore & Thermal Glider',
+    sizeLabel: '18.2m Wingspan · 14.8m Length',
+    scientificName: 'Draconis aetherius volans',
+    wingLoadingNm2: '342 N/m² (Thermal Updraft Assisted)',
+    metabolicOutput: '14,800 kcal/hr (Exothermic Plasma Gland)',
+    eggSpecs: '22.5 kg · 85°C Volcanic Incubation · 1,250 kcal',
+    lore: 'Soaring high above the island on 18-meter articulated patagium wings, the Aetherial Sky-Wyvern rides convective thermal updrafts rising from the volcanic caldera and glacial ridges. It fiercely guards its glowing Dragon Eggs in high crag nests—stealing an egg triggers immediate aerial pursuit.',
+    enrageTrigger: 'When a Dragon Egg is stolen or HP drops below 45%, its wing membranes and flame-gland maw ignite electric cyan-gold.',
+    tells: [
+      {
+        name: 'Supersonic Thermal Dive-Bomb',
+        cue: 'Folds its colossal wings inward at altitude and ignites a cyan plasma corona in its jaws.',
+        counter: 'Engage Mithril Flight [V] or lateral dodge-dash perpendicular to its dive vector, then strike its Wing Patagium.',
+      },
+      {
+        name: 'Aether-Plasma Breath Sweep',
+        cue: 'Hovers with rhythmic wing-beats and inhales glowing blue-gold atmospheric ions.',
+        counter: 'Ascend above its head plane using [Space] in flight mode and pierce the Draconic Flame-Gland Maw.',
+      },
+    ],
+    weaknesses: [
+      {
+        part: 'Draconic Flame-Gland Maw',
+        multiplier: '1.75x Damage',
+        breakBonus: 'Drops Dragon Scale + grounds aerial breath attacks',
+      },
+      {
+        part: 'Aetherial Wing Patagium',
+        multiplier: '1.55x Damage',
+        breakBonus: 'Drops Apex Magma Core + forces the dragon to land for 5s',
+      },
+    ],
+    drops: ['Aetherial Dragon Scale', 'Apex Magma Heart', 'Sovereign Titan Fang'],
+    huntingTips: [
+      'Press [V] to deploy your Mastercraft Mithril Flight Wings and intercept the Sky-Wyvern in its own thermal airways.',
+      'Stealing the Sky-Wyvern Dragon Egg from the Caldera Trench nest (-18, -44) will lure the dragon down into close combat.',
     ],
   },
   caldera_titan: {

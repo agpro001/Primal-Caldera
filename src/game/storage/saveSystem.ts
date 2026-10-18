@@ -47,6 +47,7 @@ export function getInitialSaveData(): SaveData {
       thunderhorn: 'tracked',
       frostfang: 'tracked',
       snapjaw: 'tracked',
+      sky_dragon: 'tracked',
       caldera_titan: 'tracked',
     },
     settings: { ...DEFAULT_SETTINGS },
@@ -63,6 +64,10 @@ export function loadSavedGame(): SaveData {
         return {
           ...defaults,
           ...parsed,
+          playerStats: {
+            ...defaults.playerStats,
+            ...(parsed.playerStats ?? {}),
+          },
           beastKnowledge: {
             ...defaults.beastKnowledge,
             ...(parsed.beastKnowledge ?? {}),

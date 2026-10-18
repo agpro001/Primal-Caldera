@@ -16,8 +16,14 @@ import type {
   CraftingRecipe,
   GameSettings,
   SaveData,
+  AtmosphericScienceState,
+  AdventureMission,
 } from './types/game.ts';
 import { GameEngine } from './game/engine/gameEngine.ts';
+import {
+  ADVENTURE_MISSIONS,
+  computeAtmosphericPhysics,
+} from './game/logic/rules.ts';
 import { TitleScreen } from './components/TitleScreen.tsx';
 import { HUD } from './components/HUD.tsx';
 import { CraftingModal } from './components/CraftingModal.tsx';
@@ -47,6 +53,17 @@ export function App() {
   const [equippedWeapon, setEquippedWeapon] = useState<WeaponId>(saveData.inventory.equippedWeapon);
   const [equippedArmor, setEquippedArmor] = useState<ArmorId>(saveData.inventory.equippedArmor);
   const [currentWeather, setCurrentWeather] = useState<WeatherType>('clear');
+  const [atmosphericScience, setAtmosphericScience] = useState<AtmosphericScienceState>(() =>
+    computeAtmosphericPhysics(0, 2.5, 28, 'jungle', 'clear', 0)
+  );
+  const [adventureMissions, setAdventureMissions] = useState<AdventureMission[]>(() =>
+    ADVENTURE_MISSIONS.map((m) => ({
+      ...m,
+      stages: [...m.stages],
+    }))
+  );
+  const [activeAdventureId, setActiveAdventureId] = useState<string>('adv_wyvern_egg_heist');
+
   const [interactPrompt, setInteractPrompt] = useState<string | null>(null);
   const [notification, setNotification] = useState<{
     message: string;
@@ -65,6 +82,7 @@ export function App() {
       thunderhorn: 'tracked',
       frostfang: 'tracked',
       snapjaw: 'tracked',
+      sky_dragon: 'tracked',
       caldera_titan: 'tracked',
     }
   );
@@ -123,6 +141,13 @@ export function App() {
       onWeaponChange: (weapon) => setEquippedWeapon(weapon),
       onWeatherChange: (weather) => setCurrentWeather(weather),
       onKnowledgeUpdate: (k) => setBeastKnowledge({ ...k }),
+      onAtmosphereChange: (atm) => setAtmosphericScience({ ...atm }),
+      onAdventuresChange: (missions, activeIdx) => {
+        setAdventureMissions([...missions]);
+        if (missions[activeIdx]) {
+          setActiveAdventureId(missions[activeIdx].id);
+        }
+      },
     });
 
     engineRef.current = engine;
@@ -190,10 +215,15 @@ export function App() {
       engine.setEquippedArmor(aId);
       setEquippedArmor(aId);
     } else if (recipe.category === 'tool') {
-      if (recipe.id === 'craft_vitality_salve') {
-        engine.playerStats.healingFlasks = Math.min(
-          engine.playerStats.maxHealingFlasks,
-          engine.playerStats.healingFlasks + 2
+      if (recipe.id === 'craft_roasted_ration') {
+        engine.playerStats.foodRations = Math.min(
+          engine.playerStats.maxFoodRations,
+          engine.playerStats.foodRations + 2
+        );
+      } else if (recipe.id === 'craft_glacial_canteen') {
+        engine.playerStats.waterCanteens = Math.min(
+          engine.playerStats.maxWaterCanteens,
+          engine.playerStats.waterCanteens + 2
         );
       } else if (recipe.id === 'craft_snare_trap') {
         engine.playerStats.traps = Math.min(
@@ -242,13 +272,28 @@ export function App() {
           equippedWeapon={equippedWeapon}
           equippedArmor={equippedArmor}
           currentWeather={currentWeather}
+          atmosphericScience={atmosphericScience}
+          adventureMissions={adventureMissions}
+          activeAdventureId={activeAdventureId}
+          isFlying={Boolean(stats.isFlying)}
+          isAirborne={Boolean(stats.isJumping || stats.isFlying)}
           interactPrompt={interactPrompt}
           notification={notification}
           focusVisionActive={focusVisionActive}
           onAttack={() => engineRef.current?.startSpearAttack()}
           onChargeRelease={() => engineRef.current?.releaseHeavyThrust()}
+          onJump={() => engineRef.current?.jumpPlayer()}
+          onToggleFlight={() => engineRef.current?.toggleFlightMode()}
           onDodge={() => engineRef.current?.startDodgeRoll()}
-          onHeal={() => engineRef.current?.useHealFlask()}
+          onEatFood={() => engineRef.current?.eatFoodRation()}
+          onDrinkWater={() => engineRef.current?.drinkWaterCanteen()}
+          onConsumeEgg={() => engineRef.current?.useCollectedEgg()}
+          onSelectAdventure={(advId) => {
+            const idx = adventureMissions.findIndex((m) => m.id === advId);
+            if (idx >= 0) {
+              engineRef.current?.selectAdventureMission(idx);
+            }
+          }}
           onPlaceTrap={() => engineRef.current?.placeTrap()}
           onThrowStone={() => engineRef.current?.throwStone()}
           onToggleFocus={() => engineRef.current?.toggleHunterFocus()}
@@ -298,7 +343,7 @@ export function App() {
         />
       )}
 
-      {/* 2D Reference Pictures & 3D Atlas Modal */}
+      {/* Minimalist Glassmorphic 2D Reference Pictures & 3D Atlas Modal */}
       {beastopediaOpen && (
         <BeastopediaModal
           knowledge={beastKnowledge}

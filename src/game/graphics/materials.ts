@@ -250,6 +250,25 @@ export class MaterialCache {
         roughness: 0.4,
         metalness: 0.45,
       }),
+      sky_dragon: new THREE.MeshStandardMaterial({
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#1e1b4b';
+          ctx.fillRect(0, 0, w, h);
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2;
+          for (let y = 0; y < h; y += 18) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(w / 2, y + 8);
+            ctx.lineTo(w, y);
+            ctx.stroke();
+          }
+        }),
+        emissive: new THREE.Color(0x0369a1),
+        emissiveIntensity: 0.42,
+        roughness: 0.28,
+        metalness: 0.55,
+      }),
     };
 
     this.beastUnderbelly = {
@@ -258,6 +277,12 @@ export class MaterialCache {
       thunderhorn: new THREE.MeshStandardMaterial({ color: 0x78716c, roughness: 0.65 }),
       frostfang: new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.75 }),
       snapjaw: new THREE.MeshStandardMaterial({ color: 0x99f6e4, roughness: 0.5 }),
+      sky_dragon: new THREE.MeshStandardMaterial({
+        color: 0x7dd3fc,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.3,
+        roughness: 0.35,
+      }),
       caldera_titan: new THREE.MeshStandardMaterial({
         color: 0x431407,
         emissive: 0x9a3412,
@@ -297,6 +322,14 @@ export class MaterialCache {
         emissive: 0x0891b2,
         emissiveIntensity: 0.5,
         roughness: 0.25,
+      }),
+      sky_dragon: new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        emissive: 0x0ea5e9,
+        emissiveIntensity: 0.95,
+        roughness: 0.2,
+        metalness: 0.4,
+        side: THREE.DoubleSide,
       }),
       caldera_titan: new THREE.MeshStandardMaterial({
         color: 0xf97316,

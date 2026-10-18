@@ -29,6 +29,7 @@ export type BeastSpecies =
   | 'thunderhorn'
   | 'frostfang'
   | 'snapjaw'
+  | 'sky_dragon'
   | 'caldera_titan';
 
 export type BeastKnowledgeLevel = 'unseen' | 'unknown' | 'tracked' | 'sighted' | 'mastered';
@@ -59,6 +60,8 @@ export type MaterialId =
   | 'glacial_pelt'
   | 'snapjaw_scale'
   | 'river_pearl'
+  | 'dragon_scale'
+  | 'dragon_egg_shell'
   | 'titan_fang'
   | 'magma_core'
   | 'sun_herb'
@@ -151,26 +154,89 @@ export interface BeastState {
   z: number;
   rotation: number;
   scale?: number;
+  isFlyingBeast?: boolean;
+  flightAltitude?: number;
   weakPoints: BeastWeakPoint[];
   carved: boolean;
   snaredTimer: number;
 }
 
+export interface AtmosphericScienceState {
+  altitudeM: number;
+  airDensityKgM3: number;
+  pressureHpa: number;
+  temperatureC: number;
+  windSpeedMs: number;
+  windDirectionDeg: number;
+  windVector: { x: number; y: number; z: number };
+  thermalLiftMs: number;
+  aerodynamicLiftN: number;
+  metabolicRateKcalHr: number;
+  humidityPercent: number;
+}
+
+export interface CreatureEggNest {
+  id: string;
+  species: BeastSpecies;
+  name: string;
+  biome: BiomeType;
+  x: number;
+  y: number;
+  z: number;
+  collected: boolean;
+  eggWeightKg: number;
+  incubationTempC: number;
+  caloricValueKcal: number;
+}
+
+export interface AdventureMission {
+  id: string;
+  codeName: string;
+  title: string;
+  category: 'heist' | 'expedition' | 'science' | 'apex_hunt';
+  biome: BiomeType;
+  targetX: number;
+  targetZ: number;
+  stages: string[];
+  currentStage: number;
+  completed: boolean;
+  rewardSummary: string;
+}
+
 export interface PlayerStats {
   hp: number;
   maxHp: number;
-  stamina: number;
-  maxStamina: number;
-  staminaRegenRate: number;
+  // Food, Water & Creature Eggs (Replaces Stamina & Heal Salves)
+  food: number;
+  maxFood: number;
+  water: number;
+  maxWater: number;
+  foodRations: number;
+  maxFoodRations: number;
+  waterCanteens: number;
+  maxWaterCanteens: number;
+  eggsCollected: number;
+  eggInventory?: Partial<Record<BeastSpecies, number>>;
+  // Flight & Physics State
+  isFlying?: boolean;
+  isJumping?: boolean;
+  altitude?: number;
+  airSpeed?: number;
+  bodyTempC?: number;
+  // Combat & Tactical Gear
   attackPower: number;
   defense: number;
   critChance: number;
-  healingFlasks: number;
-  maxHealingFlasks: number;
   traps: number;
   maxTraps: number;
   lureStones: number;
   maxLureStones: number;
+  // Legacy compatibility fields
+  stamina: number;
+  maxStamina: number;
+  staminaRegenRate: number;
+  healingFlasks: number;
+  maxHealingFlasks: number;
 }
 
 export interface QuestStep {
@@ -219,6 +285,10 @@ export interface BeastopediaEntry {
   biomeName: string;
   diet: string;
   sizeLabel: string;
+  scientificName?: string;
+  wingLoadingNm2?: string;
+  metabolicOutput?: string;
+  eggSpecs?: string;
   lore: string;
   tells: {
     name: string;

@@ -14,6 +14,11 @@ import type {
   BeastWeakPoint,
   BeastSpecies,
   GameSettings,
+  BiomeType,
+  WeatherType,
+  AtmosphericScienceState,
+  CreatureEggNest,
+  AdventureMission,
 } from '../../types/game.ts';
 
 export const WEAPON_REGISTRY: Record<WeaponId, WeaponDef> = {
@@ -78,51 +83,51 @@ export const WEAPON_REGISTRY: Record<WeaponId, WeaponDef> = {
 export const ARMOR_REGISTRY: Record<ArmorId, ArmorDef> = {
   scavenger_rags: {
     id: 'scavenger_rags',
-    name: 'Castaway Leather Wraps',
+    name: 'Mithril Scout Vanguard Mail',
     tier: 1,
-    defense: 6,
-    maxHpBonus: 0,
+    defense: 12,
+    maxHpBonus: 10,
     maxStaminaBonus: 0,
     dodgeStaminaReduction: 0,
-    description: 'Light cured hides allowing swift movement through dense fern jungles.',
-    color: '#785a46',
-    trimColor: '#a8a29e',
+    description: 'Light Roscrean chainmail and fluted mithril shoulder guards with a wind-swept royal cloak.',
+    color: '#94a3b8',
+    trimColor: '#eab308',
   },
   raptor_stalker_garb: {
     id: 'raptor_stalker_garb',
-    name: 'Raptor-Scale Stalker Garb',
+    name: 'Raptor-Crest Mithril Cuirass',
     tier: 2,
-    defense: 16,
-    maxHpBonus: 30,
+    defense: 22,
+    maxHpBonus: 40,
     maxStaminaBonus: 25,
     dodgeStaminaReduction: 3,
-    description: 'Supple feathered scales that reduce dodge roll fatigue and sharpen agility.',
-    color: '#991b1b',
+    description: 'Articulated silver-blue mithril breastplate reinforced with feathered raptor scales.',
+    color: '#64748b',
     trimColor: '#f59e0b',
   },
   bronto_plate_mail: {
     id: 'bronto_plate_mail',
-    name: 'Brontoshell Carapace Plate',
+    name: 'Roscrean Mithril Carapace Plate',
     tier: 3,
-    defense: 30,
-    maxHpBonus: 70,
+    defense: 36,
+    maxHpBonus: 80,
     maxStaminaBonus: 35,
     dodgeStaminaReduction: 4,
-    description: 'Interlocking coastal shell plates capable of deflecting crushing tail slams.',
-    color: '#1e3a8a',
-    trimColor: '#38bdf8',
+    description: 'Heavy interlocking mithril tassets and coastal carapace plating with gilded trim.',
+    color: '#38bdf8',
+    trimColor: '#fbbf24',
   },
   thunder_warden_aegis: {
     id: 'thunder_warden_aegis',
-    name: 'Thunder-Warden Obsidian Aegis',
+    name: 'Mastercraft Mithril Armor Set',
     tier: 4,
-    defense: 48,
-    maxHpBonus: 120,
+    defense: 56,
+    maxHpBonus: 140,
     maxStaminaBonus: 60,
     dodgeStaminaReduction: 6,
-    description: 'Masterwork prehistoric armor tempered in geothermal vents and volcanic glass.',
-    color: '#18181b',
-    trimColor: '#fb923c',
+    description: 'Ornate Beyond Skyrim Mastercraft Mithril panoply with gold filigree, plumed helm, armored skirt & cape.',
+    color: '#bae6fd',
+    trimColor: '#facc15',
   },
 };
 
@@ -202,13 +207,25 @@ export const CRAFTING_RECIPES: CraftingRecipe[] = [
     ],
   },
   {
-    id: 'craft_vitality_salve',
-    name: 'Refill Vitality Salves (+2)',
+    id: 'craft_roasted_ration',
+    name: 'Cook Roasted Beast Rations (+2)',
     category: 'tool',
     targetId: 'vitality_salve',
-    description: 'Distill glowing sun-herbs and geothermal resin into restorative salves.',
+    description: 'Roast nutrient-dense beast cuts with sun-herbs (+650 kcal Food & +45 HP per ration).',
     tier: 1,
-    ingredients: [{ materialId: 'sun_herb', count: 2 }],
+    ingredients: [
+      { materialId: 'beast_bone', count: 1 },
+      { materialId: 'sun_herb', count: 1 },
+    ],
+  },
+  {
+    id: 'craft_glacial_canteen',
+    name: 'Purify Glacial Water Canteens (+2)',
+    category: 'tool',
+    targetId: 'vitality_salve',
+    description: 'Filter crystal river water through coral stone (+600 mL Hydration & +25 HP per canteen).',
+    tier: 1,
+    ingredients: [{ materialId: 'coral_stone', count: 1 }],
   },
   {
     id: 'craft_snare_trap',
@@ -295,21 +312,380 @@ export const QUEST_CHAIN: QuestStep[] = [
 ];
 
 export const DEFAULT_PLAYER_STATS: PlayerStats = {
-  hp: 140,
-  maxHp: 140,
+  hp: 150,
+  maxHp: 150,
+  food: 2400,
+  maxFood: 2400,
+  water: 2000,
+  maxWater: 2000,
+  foodRations: 4,
+  maxFoodRations: 8,
+  waterCanteens: 4,
+  maxWaterCanteens: 6,
+  eggsCollected: 0,
+  eggInventory: {},
+  isFlying: false,
+  isJumping: false,
+  altitude: 1.8,
+  airSpeed: 0,
+  bodyTempC: 37.0,
   stamina: 110,
   maxStamina: 110,
-  staminaRegenRate: 24,
-  attackPower: 24,
-  defense: 6,
-  critChance: 0.1,
-  healingFlasks: 3,
-  maxHealingFlasks: 4,
-  traps: 2,
-  maxTraps: 3,
-  lureStones: 5,
-  maxLureStones: 5,
+  staminaRegenRate: 100,
+  attackPower: 28,
+  defense: 12,
+  critChance: 0.14,
+  healingFlasks: 0,
+  maxHealingFlasks: 0,
+  traps: 3,
+  maxTraps: 5,
+  lureStones: 6,
+  maxLureStones: 8,
 };
+
+export const ADVENTURE_MISSIONS: AdventureMission[] = [
+  {
+    id: 'adv_wyvern_egg_heist',
+    codeName: 'OP-01 · WYVERN TRENCH HEIST',
+    title: 'Aetherial Sky-Dragon Egg Heist',
+    category: 'heist',
+    biome: 'caldera',
+    targetX: -18,
+    targetZ: -44,
+    stages: [
+      'RECON: Activate Mithril Flight [V] and ride a thermal updraft column above 14m altitude',
+      'INFILTRATE: Locate a glowing Creature or Sky-Dragon Egg Nest and extract the Egg [E]',
+      'ESCAPE: Outfly or defeat the pursuing Aetherial Sky-Wyvern in aerial or ground combat',
+    ],
+    currentStage: 0,
+    completed: false,
+    rewardSummary: '+1 Sky-Dragon Egg · +650 kcal Nutrition · Unlocks Dragon Lore',
+  },
+  {
+    id: 'adv_hydro_ambush',
+    codeName: 'OP-02 · HYDROLOGICAL EXTRACTION',
+    title: 'Crystal River Snapjaw & Hydration Survey',
+    category: 'science',
+    biome: 'river',
+    targetX: -22,
+    targetZ: 14,
+    stages: [
+      'SAMPLE: Wade into the Crystal River and replenish Freshwater Canteens [H]',
+      'EGG RECOVERY: Collect the submerged Snapjaw Leviathan Egg on the river shoal [E]',
+      'HUNT: Slay or break the Hydro-Sail of the River Snapjaw Leviathan',
+    ],
+    currentStage: 0,
+    completed: false,
+    rewardSummary: '+1 Snapjaw Egg · Full Hydration · +2 Coral Stone',
+  },
+  {
+    id: 'adv_glacial_expedition',
+    codeName: 'OP-03 · CRYO-PEAK EXPEDITION',
+    title: 'Cold Snow Mountain & Frostfang Ivory Heist',
+    category: 'expedition',
+    biome: 'snow',
+    targetX: 58,
+    targetZ: -18,
+    stages: [
+      'ASCENT: Fly or climb into the Eastern Cold Snow Mountains (< 0°C alpine zone)',
+      'NEST RAID: Secure the Insulated Frostfang Egg from the glacier crag [E]',
+      'TITAN CLASH: Break the Curved Glacial Ivory Tusks of the Frostfang Mammoth',
+    ],
+    currentStage: 0,
+    completed: false,
+    rewardSummary: '+1 Frostfang Egg · +2 Glacial Ivory · Mastercraft Mithril Blueprint',
+  },
+  {
+    id: 'adv_coastal_fortress',
+    codeName: 'OP-04 · BLACK COAST SIEGE',
+    title: 'Brontoshell Carapace & Ocean Reef Raid',
+    category: 'apex_hunt',
+    biome: 'coast',
+    targetX: 42,
+    targetZ: 38,
+    stages: [
+      'SCOUT: Glide to the Black Sand Coast & Ocean Bay and locate the Brontoshell Nest',
+      'BREACH: Use a Heavy Thrust [Right-Click] to crack the Brontoshell Behemoth head or tail club',
+      'HARVEST: Carve coastal carapace plates for Roscrean Mithril armor reinforcement',
+    ],
+    currentStage: 0,
+    completed: false,
+    rewardSummary: '+1 Brontoshell Egg · +2 Bronto Carapace · +450 kcal Rations',
+  },
+  {
+    id: 'adv_geothermal_capacitor',
+    codeName: 'OP-05 · BIO-CAPACITOR HEIST',
+    title: 'Thunderhorn Geothermal Charge Operation',
+    category: 'heist',
+    biome: 'springs',
+    targetX: -44,
+    targetZ: -16,
+    stages: [
+      'SETUP: Place a Sinew Snare Trap [T] along the steaming sulfur springs trail',
+      'LURE: Throw an Acoustic Lure Stone [R] and snare the Thunderhorn Prime',
+      'EXTRACTION: Collect the Bio-Electric Thunderhorn Egg & Conductive Horn',
+    ],
+    currentStage: 0,
+    completed: false,
+    rewardSummary: '+1 Thunderhorn Egg · +2 Conductive Horn · +3 Obsidian Shard',
+  },
+  {
+    id: 'adv_caldera_sovereign',
+    codeName: 'OP-06 · FINALE: SOVEREIGN STRIKE',
+    title: 'Ignis-Rex & The Ancient Signal Beacon',
+    category: 'apex_hunt',
+    biome: 'caldera',
+    targetX: 0,
+    targetZ: -62,
+    stages: [
+      'PREP: Maintain > 1,200 kcal Food & > 1,000 mL Water for peak metabolic regeneration',
+      'CONFRONTATION: Defeat Ignis-Rex the Caldera Titan or Aurelius the Sky-Dragon',
+      'IGNITION: Carry the Sovereign Fang to the Signal Tower (0, 5) and ignite the Beacon [E]',
+    ],
+    currentStage: 0,
+    completed: false,
+    rewardSummary: 'Island Sovereign Victory · Mastercraft Mithril Panoply Complete',
+  },
+];
+
+export const INITIAL_EGG_NESTS: CreatureEggNest[] = [
+  {
+    id: 'nest_raptor',
+    species: 'raptor',
+    name: 'Feathered Raptor Clutch Egg',
+    biome: 'jungle',
+    x: -31,
+    y: 0,
+    z: 49,
+    collected: false,
+    eggWeightKg: 4.2,
+    incubationTempC: 31.5,
+    caloricValueKcal: 520,
+  },
+  {
+    id: 'nest_snapjaw',
+    species: 'snapjaw',
+    name: 'Bioluminescent River Leviathan Egg',
+    biome: 'river',
+    x: -26,
+    y: 0,
+    z: 10,
+    collected: false,
+    eggWeightKg: 7.8,
+    incubationTempC: 22.0,
+    caloricValueKcal: 680,
+  },
+  {
+    id: 'nest_brontoshell',
+    species: 'brontoshell',
+    name: 'Calcified Coastal Behemoth Egg',
+    biome: 'coast',
+    x: 48,
+    y: 0,
+    z: 42,
+    collected: false,
+    eggWeightKg: 14.5,
+    incubationTempC: 28.0,
+    caloricValueKcal: 780,
+  },
+  {
+    id: 'nest_frostfang',
+    species: 'frostfang',
+    name: 'Cryo-Insulated Glacial Relic Egg',
+    biome: 'snow',
+    x: 64,
+    y: 0,
+    z: -22,
+    collected: false,
+    eggWeightKg: 18.0,
+    incubationTempC: -4.0,
+    caloricValueKcal: 920,
+  },
+  {
+    id: 'nest_thunderhorn',
+    species: 'thunderhorn',
+    name: 'Piezoelectric Ceratopsian Egg',
+    biome: 'springs',
+    x: -49,
+    y: 0,
+    z: -20,
+    collected: false,
+    eggWeightKg: 12.4,
+    incubationTempC: 38.5,
+    caloricValueKcal: 840,
+  },
+  {
+    id: 'nest_sky_dragon',
+    species: 'sky_dragon',
+    name: 'Aetherial Sky-Wyvern Dragon Egg',
+    biome: 'caldera',
+    x: -18,
+    y: 0,
+    z: -44,
+    collected: false,
+    eggWeightKg: 22.5,
+    incubationTempC: 85.0,
+    caloricValueKcal: 1250,
+  },
+  {
+    id: 'nest_caldera_titan',
+    species: 'caldera_titan',
+    name: 'Molten Sovereign Titan Egg',
+    biome: 'caldera',
+    x: 8,
+    y: 0,
+    z: -66,
+    collected: false,
+    eggWeightKg: 28.0,
+    incubationTempC: 110.0,
+    caloricValueKcal: 1500,
+  },
+];
+
+/**
+ * Real Atmospheric & Fluid Physics Calculator:
+ * Computes barometric pressure P(h), air density rho(h) via Ideal Gas Law,
+ * biome + altitude temperature gradient, 3D wind vector, and thermal updraft lift.
+ */
+export function computeAtmosphericPhysics(
+  x: number,
+  y: number,
+  z: number,
+  biome: BiomeType,
+  weather: WeatherType,
+  timeSec: number
+): AtmosphericScienceState {
+  const altitudeM = Math.max(0, y * 12.5); // 1 world unit = 12.5m elevation scale
+
+  // Biome base temperature at sea level (deg C)
+  const biomeTempMap: Record<BiomeType, number> = {
+    jungle: 27.5,
+    coast: 24.0,
+    river: 21.0,
+    ocean: 22.5,
+    springs: 34.0,
+    lava: 42.0,
+    caldera: 46.5,
+    snow: -8.5,
+  };
+  const baseTemp = biomeTempMap[biome] ?? 25.0;
+  const weatherTempOffset =
+    weather === 'heavy_rain' ? -3.5 : weather === 'dense_fog' ? -1.8 : weather === 'ash_storm' ? 4.5 : 0;
+
+  // Tropospheric lapse rate: -6.5 C per 1000m
+  const temperatureC = Number((baseTemp + weatherTempOffset - (altitudeM / 1000) * 6.5).toFixed(1));
+  const tempKelvin = temperatureC + 273.15;
+
+  // Barometric formula: P = P0 * (1 - 0.0065 * h / T0)^5.25588
+  const pressureHpa = Number(
+    (1013.25 * Math.pow(Math.max(0.1, 1 - (0.0065 * altitudeM) / 288.15), 5.25588)).toFixed(1)
+  );
+
+  // Ideal gas law for dry air: rho = P / (R_specific * T), R_specific = 287.058 J/(kg*K)
+  const airDensityKgM3 = Number(((pressureHpa * 100) / (287.058 * tempKelvin)).toFixed(3));
+
+  // Wind speed & vector (higher at altitude and during storms)
+  const weatherWindMult =
+    weather === 'ash_storm' ? 2.1 : weather === 'heavy_rain' ? 1.65 : weather === 'dense_fog' ? 0.65 : 1.0;
+  const windAngle = 0.65 + Math.sin(timeSec * 0.12) * 0.35;
+  const windSpeedMs = Number(
+    ((4.2 + altitudeM * 0.018 + Math.sin(timeSec * 0.45 + x * 0.03) * 1.4) * weatherWindMult).toFixed(1)
+  );
+
+  const windVector = {
+    x: Number((Math.cos(windAngle) * windSpeedMs).toFixed(2)),
+    y: Number((Math.sin(timeSec * 0.7) * 0.35).toFixed(2)),
+    z: Number((Math.sin(windAngle) * windSpeedMs).toFixed(2)),
+  };
+
+  // Thermal updraft velocity (m/s) over volcanic caldera, geothermal springs, or high ridges
+  let thermalLiftMs = 0;
+  if (biome === 'caldera' || biome === 'lava') {
+    thermalLiftMs = 5.4;
+  } else if (biome === 'springs') {
+    thermalLiftMs = 3.8;
+  } else if (biome === 'snow' && altitudeM > 60) {
+    thermalLiftMs = 2.6; // Ridge lift
+  }
+
+  // Relative humidity (%)
+  const humidityMap: Record<BiomeType, number> = {
+    river: 88,
+    ocean: 84,
+    jungle: 78,
+    springs: 92,
+    coast: 74,
+    snow: 48,
+    lava: 22,
+    caldera: 18,
+  };
+  const humidityPercent = Math.min(
+    100,
+    Math.round((humidityMap[biome] ?? 65) + (weather === 'heavy_rain' ? 18 : 0))
+  );
+
+  return {
+    altitudeM: Math.round(altitudeM),
+    airDensityKgM3,
+    pressureHpa,
+    temperatureC,
+    windSpeedMs,
+    windDirectionDeg: Math.round(((windAngle * 180) / Math.PI + 360) % 360),
+    windVector,
+    thermalLiftMs,
+    aerodynamicLiftN: Math.round(0.5 * airDensityKgM3 * windSpeedMs * windSpeedMs * 4.8 * 1.15),
+    metabolicRateKcalHr: Math.round(
+      320 + (temperatureC < 5 ? (5 - temperatureC) * 12 : 0) + (temperatureC > 35 ? (temperatureC - 35) * 9 : 0)
+    ),
+    humidityPercent,
+  };
+}
+
+/**
+ * Pure function modeling human survival metabolism (Food kcal & Water mL) and natural HP homeostasis.
+ * Replaces arbitrary Stamina & Heal Flasks with biologically grounded nutrition and hydration.
+ */
+export function computeSurvivalMetabolism(
+  stats: PlayerStats,
+  atmo: AtmosphericScienceState,
+  isMoving: boolean,
+  isFlying: boolean,
+  inFreshWater: boolean,
+  dt: number
+): PlayerStats {
+  const next = { ...stats };
+
+  // Caloric expenditure (kcal/s)
+  const activityMult = isFlying ? 2.4 : isMoving ? 1.65 : 1.0;
+  const coldThermogenesis = atmo.temperatureC < 0 ? 1.45 : 1.0;
+  const kcalBurnPerSec = 1.15 * activityMult * coldThermogenesis;
+  next.food = Math.max(0, next.food - kcalBurnPerSec * dt);
+
+  // Hydration flux (mL/s): standing in freshwater river/springs rehydrates automatically
+  if (inFreshWater) {
+    next.water = Math.min(next.maxWater, next.water + 85 * dt);
+    next.waterCanteens = next.maxWaterCanteens;
+  } else {
+    const heatSweatMult = atmo.temperatureC > 32 ? 2.1 : atmo.temperatureC > 26 ? 1.35 : 0.9;
+    const waterLossPerSec = 1.1 * activityMult * heatSweatMult;
+    next.water = Math.max(0, next.water - waterLossPerSec * dt);
+  }
+
+  // Core body temperature homeostasis (36.5C - 37.8C normal)
+  const targetBodyTemp =
+    37.0 + (atmo.temperatureC - 24.0) * 0.035 + (isMoving || isFlying ? 0.25 : 0);
+  next.bodyTempC = Number(targetBodyTemp.toFixed(1));
+
+  // Natural cellular regeneration when nourished (Food > 35% and Water > 35%)
+  const foodRatio = next.food / Math.max(1, next.maxFood);
+  const waterRatio = next.water / Math.max(1, next.maxWater);
+  if (foodRatio > 0.35 && waterRatio > 0.35 && next.hp > 0 && next.hp < next.maxHp) {
+    const regenRate = foodRatio > 0.7 && waterRatio > 0.7 ? 4.2 : 2.1;
+    next.hp = Math.min(next.maxHp, next.hp + regenRate * dt);
+  }
+
+  return next;
+}
 
 export const DEFAULT_SETTINGS: GameSettings = {
   cameraSensitivity: 1.0,
@@ -686,6 +1062,31 @@ export function createBeastWeakPoints(species: BeastSpecies): BeastWeakPoint[] {
           maxPartHp: 120,
           broken: false,
           bonusDropMaterialId: 'coral_stone',
+        },
+      ];
+    case 'sky_dragon':
+      return [
+        {
+          id: 'dragon_aether_crest',
+          name: 'Draconic Flame-Gland Maw',
+          localOffset: { x: 0, y: 2.2, z: 2.9 },
+          radius: 1.55,
+          damageMultiplier: 1.75,
+          partHp: 180,
+          maxPartHp: 180,
+          broken: false,
+          bonusDropMaterialId: 'dragon_scale',
+        },
+        {
+          id: 'dragon_wing_membrane',
+          name: 'Aetherial Wing Patagium',
+          localOffset: { x: 0, y: 2.5, z: 0.2 },
+          radius: 1.85,
+          damageMultiplier: 1.55,
+          partHp: 160,
+          maxPartHp: 160,
+          broken: false,
+          bonusDropMaterialId: 'magma_core',
         },
       ];
     case 'caldera_titan':

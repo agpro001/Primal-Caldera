@@ -18,18 +18,24 @@ import type {
   BeastKnowledgeLevel,
   TrackClue,
   TribalNPC,
+  CreatureEggNest,
+  AtmosphericScienceState,
+  AdventureMission,
 } from '../../types/game.ts';
 import {
   WEAPON_REGISTRY,
   ARMOR_REGISTRY,
   QUEST_CHAIN,
+  INITIAL_EGG_NESTS,
+  ADVENTURE_MISSIONS,
   calculateDamage,
   calculatePlayerDamageTaken,
-  calculateStaminaCost,
   isDodgeInvulnerable,
   applyWeakPointDamage,
   createBeastWeakPoints,
   computeCameraRelativeMovement,
+  computeAtmosphericPhysics,
+  computeSurvivalMetabolism,
   stepAngleShortestArc,
 } from '../logic/rules.ts';
 import { MaterialCache } from '../graphics/materials.ts';
@@ -37,6 +43,7 @@ import {
   buildHunterModel,
   buildBeastModel,
   buildTribalNPCModel,
+  buildEggNestModel,
   HunterRig,
   BeastRig,
 } from '../graphics/proceduralModels.ts';
@@ -63,6 +70,8 @@ export interface EngineCallbacks {
   onWeaponChange: (weaponId: WeaponId) => void;
   onWeatherChange?: (weather: WeatherType) => void;
   onKnowledgeUpdate?: (knowledge: Record<BeastSpecies, BeastKnowledgeLevel>) => void;
+  onAtmosphereChange?: (atmo: AtmosphericScienceState) => void;
+  onAdventuresChange?: (missions: AdventureMission[], activeIndex: number) => void;
 }
 
 interface ActiveBeastActor {
@@ -141,16 +150,26 @@ export class GameEngine {
     thunderhorn: 'tracked',
     frostfang: 'tracked',
     snapjaw: 'tracked',
+    sky_dragon: 'tracked',
     caldera_titan: 'tracked',
   };
 
-  // Player Transform & Movement
+  // Player Transform, Flight & Physics Kinematics
   public playerPos = new THREE.Vector3(0, 1.8, 28);
+  public playerVelY = 0;
+  public isGrounded = true;
+  public isFlying = false;
   public playerRotation = 0;
   public cameraYaw = 0;
   public cameraPitch = 0.36;
   private cameraDistance = 7.8;
   private cameraShakeIntensity = 0;
+  public currentAtmosphere: AtmosphericScienceState;
+  public adventureMissions: AdventureMission[] = ADVENTURE_MISSIONS.map((m) => ({
+    ...m,
+    stages: [...m.stages],
+  }));
+  public activeAdventureIndex = 0;
 
   // Player Action States
   private keysPressed = new Set<string>();
@@ -171,11 +190,15 @@ export class GameEngine {
   // Entities
   public beasts: ActiveBeastActor[] = [];
   public npcs: ActiveNPCActor[] = [];
+  public eggNests: { data: CreatureEggNest; mesh: THREE.Group }[] = [];
   private clues: { data: TrackClue; mesh: THREE.Group }[] = [];
   private traps: PlacedTrap[] = [];
   private projectiles: LureStoneProjectile[] = [];
   private particles: ParticleBurst[] = [];
   private particlePoolGroup = new THREE.Group();
+  private airStreamGroup = new THREE.Group();
+  private airRibbons: { mesh: THREE.Mesh; baseX: number; baseY: number; baseZ: number; phase: number }[] = [];
+  private thermalColumns: { x: number; z: number; radius: number; ringMesh: THREE.Mesh }[] = [];
 
   // Loop
   private animFrameId = 0;
@@ -190,7 +213,24 @@ export class GameEngine {
   constructor(container: HTMLElement, saveData: SaveData, callbacks: EngineCallbacks) {
     this.container = container;
     this.callbacks = callbacks;
-    this.playerStats = { ...saveData.playerStats };
+    this.playerStats = {
+      ...saveData.playerStats,
+      food: saveData.playerStats.food ?? 2400,
+      maxFood: saveData.playerStats.maxFood ?? 2400,
+      water: saveData.playerStats.water ?? 2000,
+      maxWater: saveData.playerStats.maxWater ?? 2000,
+      foodRations: saveData.playerStats.foodRations ?? 4,
+      maxFoodRations: saveData.playerStats.maxFoodRations ?? 8,
+      waterCanteens: saveData.playerStats.waterCanteens ?? 4,
+      maxWaterCanteens: saveData.playerStats.maxWaterCanteens ?? 6,
+      eggsCollected: saveData.playerStats.eggsCollected ?? 0,
+      eggInventory: { ...(saveData.playerStats.eggInventory ?? {}) },
+      isFlying: false,
+      isJumping: false,
+      altitude: 1.8,
+      airSpeed: 0,
+      bodyTempC: 37.0,
+    };
     this.equippedWeapon = saveData.inventory.equippedWeapon;
     this.equippedArmor = saveData.inventory.equippedArmor;
     this.ownedWeapons = [...saveData.inventory.weapons];
@@ -200,22 +240,23 @@ export class GameEngine {
     this.signalTowerProgress = saveData.signalTowerProgress;
     this.beaconLit = saveData.beaconLit;
     this.beastsHunted = [...saveData.beastsHunted];
-    this.beastKnowledge = saveData.beastKnowledge
-      ? { ...saveData.beastKnowledge }
-      : {
-          raptor: 'tracked',
-          brontoshell: 'tracked',
-          thunderhorn: 'tracked',
-          frostfang: 'tracked',
-          snapjaw: 'tracked',
-          caldera_titan: 'tracked',
-        };
+    this.beastKnowledge = {
+      raptor: 'tracked',
+      brontoshell: 'tracked',
+      thunderhorn: 'tracked',
+      frostfang: 'tracked',
+      snapjaw: 'tracked',
+      sky_dragon: 'tracked',
+      caldera_titan: 'tracked',
+      ...(saveData.beastKnowledge ?? {}),
+    };
 
     this.weatherSystem = new WeatherSystem();
     if (saveData.currentWeather) {
       this.weatherSystem.setWeather(saveData.currentWeather);
     }
     this.trailSystem = new TrailSystem();
+    this.currentAtmosphere = computeAtmosphericPhysics(0, 2, 28, 'jungle', 'clear', 0);
 
     const isHeadless = navigator.webdriver || /HeadlessChrome/i.test(navigator.userAgent);
 
@@ -286,10 +327,11 @@ export class GameEngine {
     this.scene.add(this.terrain.towerGroup);
     this.scene.add(this.terrain.clueGroup);
     this.scene.add(this.particlePoolGroup);
+    this.scene.add(this.airStreamGroup);
     this.scene.add(this.weatherSystem.weatherParticleGroup);
     this.scene.add(this.trailSystem.trailGroup);
 
-    // Hunter Model
+    // Hunter Model (Mastercraft Mithril Armor Knight)
     this.hunter = buildHunterModel(this.materialCache);
     this.hunter.updateWeapon(this.equippedWeapon);
     this.hunter.updateArmor(this.equippedArmor);
@@ -304,8 +346,9 @@ export class GameEngine {
     // Initialize Tribal Characters (NPCs)
     this.initNPCs();
 
-    // Initialize All 6 Prehistoric Beasts
+    // Initialize All 7 Prehistoric & Draconic Beasts (including Flying Dragons!) + 7 Creature Egg Nests
     this.initBeasts();
+    this.initEggNestsAndAirStreams();
 
     // Pre-allocate particle geometries
     this.initParticles();
@@ -323,17 +366,35 @@ export class GameEngine {
         gameState: this.gameState,
         playerPos: { x: this.playerPos.x, y: this.playerPos.y, z: this.playerPos.z },
         playerRotation: this.playerRotation,
+        isFlying: this.isFlying,
+        isGrounded: this.isGrounded,
         cameraYaw: this.cameraYaw,
         virtualMove: { x: this.virtualMoveX, y: this.virtualMoveY },
         biome: getTerrainBiome(this.playerPos.x, this.playerPos.z),
+        atmosphere: this.currentAtmosphere,
+        stats: {
+          hp: this.playerStats.hp,
+          food: this.playerStats.food,
+          water: this.playerStats.water,
+          eggsCollected: this.playerStats.eggsCollected,
+        },
         beasts: this.beasts.map((b) => ({
           id: b.state.id,
           species: b.state.species,
           name: b.state.name,
           biome: b.state.biome,
           x: b.state.x,
+          y: b.state.y,
           z: b.state.z,
           hp: b.state.hp,
+          isFlyingBeast: b.state.isFlyingBeast,
+        })),
+        eggNests: this.eggNests.map((n) => ({
+          id: n.data.id,
+          species: n.data.species,
+          x: n.data.x,
+          z: n.data.z,
+          collected: n.data.collected,
         })),
         npcs: this.npcs.map((n) => ({
           id: n.data.id,
@@ -346,6 +407,8 @@ export class GameEngine {
         this.virtualMoveX = x;
         this.virtualMoveY = y;
       },
+      toggleFlight: () => this.toggleFlightMode(),
+      jump: () => this.jumpPlayer(),
       teleport: (x: number, z: number, yaw = 0) => {
         this.playerPos.set(x, this.terrain.getHeight(x, z), z);
         this.hunter.root.position.copy(this.playerPos);
@@ -370,31 +433,34 @@ export class GameEngine {
         z: 24.2,
         rotation: 0.45,
         biome: 'jungle',
-        greeting: 'Chief Kael: "Walk with the wind, Koa! East lie the Cold Snow Mountains & Frostfang Mammoth; north flows the Crystal River where the Snapjaw Leviathan lurks."',
+        greeting:
+          'Chief Kael: "Hail, Mithril Vanguard! Press [V] to deploy your Flight Wings, raid the Dragon Egg nests, and watch your Food & Water homeostasis!"',
         giftMaterial: { id: 'beast_bone', count: 3, claimed: false },
       },
       {
         id: 'smith_torak',
         name: 'Forge-Master Torak',
-        role: 'Obsidian & Bone Weaponsmith',
+        role: 'Mithril & Obsidian Weaponsmith',
         x: 3.2,
         y: 0,
         z: 24.5,
         rotation: -0.5,
         biome: 'jungle',
-        greeting: 'Torak: "Bring me Raptor Claws, Brontoshell Plates, or Frostfang Ivory and I will forge you weapons fit for the Caldera Titan!"',
+        greeting:
+          'Torak: "Your Mastercraft Mithril panoply gleams like Beyond Skyrim steel! Bring me Dragon Scales or Frostfang Ivory to temper your glaive!"',
         giftMaterial: { id: 'obsidian_shard', count: 2, claimed: false },
       },
       {
         id: 'scout_lyra',
         name: 'Scout Lyra',
-        role: 'River Pathfinder & Herbalist',
+        role: 'River Hydrologist & Aerial Spotter',
         x: -13.5,
         y: 0,
         z: 16.8,
         rotation: 2.6,
         biome: 'river',
-        greeting: 'Scout Lyra: "Watch the turquoise river shallows! The River Snapjaw Leviathan strikes from the water, and upstream in the snow peaks roams the Frostfang Mammoth."',
+        greeting:
+          'Scout Lyra: "Drink from the Crystal River [H] to refill your canteen! Overhead, Aurelius the Sky-Dragon circles the thermal updrafts guarding its Dragon Egg!"',
         giftMaterial: { id: 'sun_herb', count: 3, claimed: false },
       },
     ];
@@ -419,6 +485,8 @@ export class GameEngine {
       z: number;
       hp: number;
       biome: BiomeType;
+      isFlyingBeast?: boolean;
+      flightAltitude?: number;
     }> = [
       {
         id: 'raptor_alpha',
@@ -471,6 +539,30 @@ export class GameEngine {
         biome: 'springs',
       },
       {
+        id: 'sky_dragon_aurelius',
+        species: 'sky_dragon',
+        name: 'Aurelius, Aetherial Sky-Wyvern',
+        title: 'Flying Dragon of the Thermal Airways',
+        x: -14,
+        z: -32,
+        hp: 560,
+        biome: 'caldera',
+        isFlyingBeast: true,
+        flightAltitude: 9.5,
+      },
+      {
+        id: 'sky_dragon_boreas',
+        species: 'sky_dragon',
+        name: 'Boreas, Glacial Sky-Dragon',
+        title: 'Winged Sovereign of the Snow Peaks',
+        x: 34,
+        z: 2,
+        hp: 540,
+        biome: 'snow',
+        isFlyingBeast: true,
+        flightAltitude: 10.5,
+      },
+      {
         id: 'caldera_titan_boss',
         species: 'caldera_titan',
         name: 'Ignis-Rex, The Caldera Titan',
@@ -484,7 +576,8 @@ export class GameEngine {
 
     beastConfigs.forEach((cfg) => {
       const rig = buildBeastModel(cfg.species, this.materialCache);
-      const y = this.terrain.getHeight(cfg.x, cfg.z);
+      const groundY = this.terrain.getHeight(cfg.x, cfg.z);
+      const y = groundY + (cfg.flightAltitude ?? 0);
       rig.root.position.set(cfg.x, y, cfg.z);
       this.scene.add(rig.root);
 
@@ -517,6 +610,8 @@ export class GameEngine {
         y,
         z: cfg.z,
         rotation: 0,
+        isFlyingBeast: cfg.isFlyingBeast,
+        flightAltitude: cfg.flightAltitude,
         weakPoints,
         carved: false,
         snaredTimer: 0,
@@ -527,7 +622,7 @@ export class GameEngine {
         rig,
         homeX: cfg.x,
         homeZ: cfg.z,
-        patrolAngle: 0,
+        patrolAngle: Math.random() * Math.PI * 2,
         chargeDirX: 0,
         chargeDirZ: 1,
         hitThisSwing: false,
@@ -549,6 +644,60 @@ export class GameEngine {
       this.terrain.clueGroup.add(group);
       this.clues.push({ data: clue, mesh: group });
     });
+  }
+
+  private initEggNestsAndAirStreams() {
+    // 1. Spawn 7 3D Creature & Dragon Egg Nests across all biomes
+    INITIAL_EGG_NESTS.forEach((nestCfg) => {
+      const copy: CreatureEggNest = { ...nestCfg };
+      copy.y = this.terrain.getHeight(copy.x, copy.z);
+      const nestMesh = buildEggNestModel(copy.species, this.materialCache);
+      nestMesh.position.set(copy.x, copy.y, copy.z);
+      this.scene.add(nestMesh);
+      this.eggNests.push({ data: copy, mesh: nestMesh });
+    });
+
+    // 2. Spawn 3D Thermal Updraft Columns & Wind Streamlines (Atmospheric Physics Visualization)
+    const thermalSpots = [
+      { x: -16, z: -38, radius: 7.5 }, // Caldera Dragon Trench Thermal
+      { x: -42, z: -14, radius: 6.5 }, // Geothermal Springs Updraft
+      { x: 48, z: -12, radius: 7.0 },  // Cold Snow Mountain Ridge Lift
+      { x: 0, z: 12, radius: 6.0 },    // Central Tower Valley Thermal
+    ];
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.36,
+      side: THREE.DoubleSide,
+    });
+    for (const spot of thermalSpots) {
+      const gy = this.terrain.getHeight(spot.x, spot.z);
+      const ringMesh = new THREE.Mesh(
+        new THREE.TorusGeometry(spot.radius * 0.65, 0.12, 8, 24),
+        ringMat
+      );
+      ringMesh.rotation.x = Math.PI / 2;
+      ringMesh.position.set(spot.x, gy + 2.5, spot.z);
+      this.airStreamGroup.add(ringMesh);
+      this.thermalColumns.push({ ...spot, ringMesh });
+    }
+
+    // 3D Wind Streamline Ribbons floating in the air
+    const ribbonGeo = new THREE.BoxGeometry(2.8, 0.05, 0.08);
+    const ribbonMat = new THREE.MeshBasicMaterial({
+      color: 0xe0f2fe,
+      transparent: true,
+      opacity: 0.28,
+    });
+    for (let i = 0; i < 28; i++) {
+      const rx = ((i * 37) % 160) - 80;
+      const rz = ((i * 53) % 160) - 80;
+      const ry = this.terrain.getHeight(rx, rz) + 3.5 + (i % 5) * 2.4;
+      const mesh = new THREE.Mesh(ribbonGeo, ribbonMat);
+      mesh.position.set(rx, ry, rz);
+      this.airStreamGroup.add(mesh);
+      this.airRibbons.push({ mesh, baseX: rx, baseY: ry, baseZ: rz, phase: i * 0.7 });
+    }
   }
 
   private initParticles() {
@@ -604,11 +753,20 @@ export class GameEngine {
 
     if (e.code === 'Space') {
       e.preventDefault();
+      this.jumpPlayer();
+    } else if (e.code === 'KeyV') {
+      e.preventDefault();
+      this.toggleFlightMode();
+    } else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
       this.startDodgeRoll();
     } else if (e.code === 'KeyF') {
       this.toggleHunterFocus();
     } else if (e.code === 'KeyQ') {
-      this.useHealFlask();
+      this.eatFoodRation();
+    } else if (e.code === 'KeyH') {
+      this.drinkWaterCanteen();
+    } else if (e.code === 'KeyG') {
+      this.useCollectedEgg();
     } else if (e.code === 'KeyT') {
       this.placeTrap();
     } else if (e.code === 'KeyR') {
@@ -658,14 +816,6 @@ export class GameEngine {
 
   public startSpearAttack() {
     if (this.isAttacking || this.isDodging) return;
-    const weapon = WEAPON_REGISTRY[this.equippedWeapon];
-    const armor = ARMOR_REGISTRY[this.equippedArmor];
-    const cost = calculateStaminaCost('light', weapon, armor);
-    if (this.playerStats.stamina < cost) {
-      this.callbacks.onNotification('Low Stamina!', 'danger');
-      return;
-    }
-    this.playerStats.stamina -= cost;
     this.isAttacking = true;
     this.isHeavyAttack = false;
     this.attackTimer = 0.34;
@@ -677,14 +827,6 @@ export class GameEngine {
   public releaseHeavyThrust() {
     this.isChargingHeavy = false;
     if (this.isAttacking || this.isDodging) return;
-    const weapon = WEAPON_REGISTRY[this.equippedWeapon];
-    const armor = ARMOR_REGISTRY[this.equippedArmor];
-    const cost = calculateStaminaCost('heavy', weapon, armor);
-    if (this.playerStats.stamina < cost) {
-      this.callbacks.onNotification('Not enough stamina for Heavy Thrust!', 'danger');
-      return;
-    }
-    this.playerStats.stamina -= cost;
     this.isAttacking = true;
     this.isHeavyAttack = true;
     this.attackTimer = 0.48;
@@ -695,12 +837,6 @@ export class GameEngine {
 
   public startDodgeRoll() {
     if (this.isDodging) return;
-    const weapon = WEAPON_REGISTRY[this.equippedWeapon];
-    const armor = ARMOR_REGISTRY[this.equippedArmor];
-    const cost = calculateStaminaCost('dodge', weapon, armor);
-    if (this.playerStats.stamina < cost) return;
-
-    this.playerStats.stamina -= cost;
     this.isDodging = true;
     this.isAttacking = false;
     this.dodgeTimer = 0.46;
@@ -710,18 +846,145 @@ export class GameEngine {
     this.callbacks.onStatsChange(this.playerStats);
   }
 
-  public useHealFlask() {
-    if (this.playerStats.healingFlasks <= 0) {
-      this.callbacks.onNotification('No Vitality Salves remaining! Craft more at camp.', 'danger');
+  public jumpPlayer() {
+    if (this.isFlying) {
+      // In flight mode, pressing Jump boosts upward altitude
+      this.playerPos.y = Math.min(48, this.playerPos.y + 2.6);
+      this.spawnParticles(this.playerPos.x, this.playerPos.y, this.playerPos.z, 0x38bdf8, 6);
       return;
     }
-    if (this.playerStats.hp >= this.playerStats.maxHp) return;
-    this.playerStats.healingFlasks--;
-    this.playerStats.hp = Math.min(this.playerStats.maxHp, this.playerStats.hp + 65);
-    sound.playHeal();
-    this.spawnParticles(this.playerPos.x, this.playerPos.y + 1, this.playerPos.z, 0x22c55e, 12);
-    this.callbacks.onNotification('Used Vitality Salve (+65 HP)', 'loot');
+    if (this.isGrounded) {
+      this.isGrounded = false;
+      this.playerVelY = 9.6;
+      this.playerStats.isJumping = true;
+      sound.playDodgeRoll();
+      this.spawnParticles(this.playerPos.x, this.playerPos.y, this.playerPos.z, 0xe2e8f0, 6);
+    } else {
+      // Pressing Jump again in mid-air engages Aetherial Mithril Flight Mode!
+      this.toggleFlightMode();
+    }
+  }
+
+  public toggleFlightMode() {
+    this.isFlying = !this.isFlying;
+    this.playerStats.isFlying = this.isFlying;
+    if (this.hunter.wings) {
+      this.hunter.wings.visible = this.isFlying;
+    }
+    if (this.isFlying) {
+      this.isGrounded = false;
+      this.playerVelY = 0;
+      const gy = this.terrain.getHeight(this.playerPos.x, this.playerPos.z);
+      if (this.playerPos.y < gy + 3.2) {
+        this.playerPos.y = gy + 3.8;
+      }
+      sound.playFocusPulse();
+      this.spawnParticles(this.playerPos.x, this.playerPos.y, this.playerPos.z, 0x38bdf8, 12);
+      this.callbacks.onNotification(
+        'Mithril Aether-Wings Deployed! [W/A/S/D] Fly · [Space] Ascend · [C] Descend · [V] Land',
+        'info'
+      );
+    } else {
+      this.callbacks.onNotification('Flight Wings Folded · Returning to Ground', 'info');
+    }
     this.callbacks.onStatsChange(this.playerStats);
+  }
+
+  /**
+   * Eat Cooked Meat & Sun-Berry Ration [Q]: Restores +650 kcal Nutrition and +45 Vitality HP via metabolic synthesis.
+   */
+  public eatFoodRation() {
+    if (this.playerStats.foodRations <= 0) {
+      this.callbacks.onNotification(
+        'No Food Rations remaining! Harvest Berry Shrubs [E] or roast meat at Campfire.',
+        'danger'
+      );
+      return;
+    }
+    this.playerStats.foodRations--;
+    this.playerStats.food = Math.min(this.playerStats.maxFood, this.playerStats.food + 650);
+    this.playerStats.hp = Math.min(this.playerStats.maxHp, this.playerStats.hp + 45);
+    sound.playHeal();
+    this.spawnParticles(this.playerPos.x, this.playerPos.y + 1, this.playerPos.z, 0xf59e0b, 10);
+    this.callbacks.onNotification(
+      'Consumed Nutrient Ration (+650 kcal Food · +45 HP Metabolic Recovery)',
+      'loot'
+    );
+    this.callbacks.onStatsChange(this.playerStats);
+  }
+
+  /**
+   * Drink Freshwater Canteen [H]: Restores +600 mL Hydration and regulates core body temperature.
+   */
+  public drinkWaterCanteen() {
+    const biome = getTerrainBiome(this.playerPos.x, this.playerPos.z);
+    if (biome === 'river' || biome === 'springs') {
+      this.playerStats.water = this.playerStats.maxWater;
+      this.playerStats.waterCanteens = this.playerStats.maxWaterCanteens;
+      this.playerStats.hp = Math.min(this.playerStats.maxHp, this.playerStats.hp + 25);
+      sound.playHeal();
+      this.spawnParticles(this.playerPos.x, this.playerPos.y + 0.8, this.playerPos.z, 0x38bdf8, 12);
+      this.callbacks.onNotification(
+        'Drank & Refilled Canteens at Freshwater Source (+2,000 mL Hydration)',
+        'loot'
+      );
+      this.callbacks.onStatsChange(this.playerStats);
+      return;
+    }
+
+    if (this.playerStats.waterCanteens <= 0) {
+      this.callbacks.onNotification(
+        'Water Canteen empty! Visit the Crystal River to drink & refill.',
+        'danger'
+      );
+      return;
+    }
+    this.playerStats.waterCanteens--;
+    this.playerStats.water = Math.min(this.playerStats.maxWater, this.playerStats.water + 600);
+    this.playerStats.hp = Math.min(this.playerStats.maxHp, this.playerStats.hp + 25);
+    sound.playHeal();
+    this.spawnParticles(this.playerPos.x, this.playerPos.y + 1, this.playerPos.z, 0x38bdf8, 10);
+    this.callbacks.onNotification('Drank Freshwater Canteen (+600 mL Hydration · +25 HP)', 'loot');
+    this.callbacks.onStatsChange(this.playerStats);
+  }
+
+  /**
+   * Consume or Bio-Synthesize a Collected Creature Egg [G] for massive caloric & vitality surge!
+   */
+  public useCollectedEgg() {
+    if (this.playerStats.eggsCollected <= 0) {
+      this.callbacks.onNotification(
+        'No Creature Eggs in inventory! Raid glowing 3D Egg Nests across the biomes [E].',
+        'danger'
+      );
+      return;
+    }
+    this.playerStats.eggsCollected--;
+    this.playerStats.food = this.playerStats.maxFood;
+    this.playerStats.water = this.playerStats.maxWater;
+    this.playerStats.hp = this.playerStats.maxHp;
+    this.playerStats.attackPower += 4;
+    sound.playVictoryFanfare();
+    this.spawnParticles(this.playerPos.x, this.playerPos.y + 1.2, this.playerPos.z, 0xfacc15, 16);
+    this.callbacks.onNotification(
+      'Synthesized Creature Egg! Full Nutrition, Full Hydration, Max HP & +4 Permanent Attack Power!',
+      'loot'
+    );
+    this.callbacks.onStatsChange(this.playerStats);
+  }
+
+  // Keep alias for any legacy caller
+  public useHealFlask() {
+    this.eatFoodRation();
+  }
+
+  public selectAdventureMission(index: number) {
+    if (index >= 0 && index < this.adventureMissions.length) {
+      this.activeAdventureIndex = index;
+      this.callbacks.onAdventuresChange?.([...this.adventureMissions], this.activeAdventureIndex);
+      const m = this.adventureMissions[index];
+      this.callbacks.onNotification(`Active Operation: ${m.codeName} — ${m.title}`, 'info');
+    }
   }
 
   public placeTrap() {
@@ -783,7 +1046,55 @@ export class GameEngine {
   }
 
   public handleInteract() {
-    // 1. Check Tribal NPCs Conversation & Gift
+    // 1. Check Creature & Sky-Dragon Egg Nests (ARK Wyvern Heist Mechanic!)
+    for (const nest of this.eggNests) {
+      if (!nest.data.collected) {
+        const dist = Math.hypot(this.playerPos.x - nest.data.x, this.playerPos.z - nest.data.z);
+        if (dist < 5.0) {
+          nest.data.collected = true;
+          const eggObj = nest.mesh.getObjectByName('creature_egg_mesh');
+          if (eggObj) eggObj.visible = false;
+          this.playerStats.eggsCollected = (this.playerStats.eggsCollected || 0) + 1;
+          this.playerStats.eggInventory = {
+            ...(this.playerStats.eggInventory || {}),
+            [nest.data.species]: ((this.playerStats.eggInventory?.[nest.data.species] || 0) + 1),
+          };
+          this.playerStats.food = Math.min(
+            this.playerStats.maxFood,
+            this.playerStats.food + Math.round(nest.data.caloricValueKcal * 0.4)
+          );
+          this.playerStats.foodRations = Math.min(
+            this.playerStats.maxFoodRations,
+            this.playerStats.foodRations + 1
+          );
+          this.totalMaterialsGathered += 2;
+          sound.playGather();
+          this.spawnParticles(nest.data.x, nest.data.y + 0.8, nest.data.z, 0xfacc15, 14);
+
+          // Alert nearby parent beast or Sky-Dragon!
+          for (const b of this.beasts) {
+            if (b.state.hp > 0 && (b.state.species === nest.data.species || b.state.species === 'sky_dragon')) {
+              const dBeast = Math.hypot(b.state.x - nest.data.x, b.state.z - nest.data.z);
+              if (dBeast < 55) {
+                b.state.aiState = 'chase';
+                b.state.enraged = true;
+                sound.playBeastRoar(b.state.species);
+              }
+            }
+          }
+
+          this.advanceAdventureProgress(nest.data.species, 'egg');
+          this.callbacks.onNotification(
+            `Egg Extracted: ${nest.data.name} (${nest.data.eggWeightKg}kg · ${nest.data.caloricValueKcal} kcal)! Beware Parent Pursuit!`,
+            'loot'
+          );
+          this.callbacks.onStatsChange(this.playerStats);
+          return;
+        }
+      }
+    }
+
+    // 2. Check Tribal NPCs Conversation & Gift
     for (const npc of this.npcs) {
       const dist = Math.hypot(this.playerPos.x - npc.data.x, this.playerPos.z - npc.data.z);
       if (dist < 4.2) {
@@ -793,30 +1104,42 @@ export class GameEngine {
           const matId = npc.data.giftMaterial.id;
           const cnt = npc.data.giftMaterial.count;
           this.inventoryMaterials[matId] = (this.inventoryMaterials[matId] || 0) + cnt;
-          this.callbacks.onNotification(`${npc.data.greeting} (+${cnt} ${matId.replace('_', ' ')})`, 'loot');
+          this.playerStats.foodRations = Math.min(this.playerStats.maxFoodRations, this.playerStats.foodRations + 2);
+          this.callbacks.onNotification(
+            `${npc.data.greeting} (+${cnt} ${matId.replace('_', ' ')} & +2 Food Rations)`,
+            'loot'
+          );
         } else {
           this.callbacks.onNotification(npc.data.greeting, 'info');
         }
+        this.callbacks.onStatsChange(this.playerStats);
         return;
       }
     }
 
-    // 2. Check Campfire Workbench (0, 28)
+    // 3. Check Campfire Workbench (0, 28)
     const distCamp = Math.hypot(this.playerPos.x - 0, this.playerPos.z - 28);
     if (distCamp < 5.2) {
       this.playerStats.hp = this.playerStats.maxHp;
-      this.playerStats.stamina = this.playerStats.maxStamina;
-      this.playerStats.healingFlasks = Math.max(this.playerStats.healingFlasks, 3);
-      this.playerStats.lureStones = 5;
+      this.playerStats.food = this.playerStats.maxFood;
+      this.playerStats.water = this.playerStats.maxWater;
+      this.playerStats.foodRations = Math.max(this.playerStats.foodRations, 5);
+      this.playerStats.waterCanteens = this.playerStats.maxWaterCanteens;
+      this.playerStats.lureStones = 6;
       this.callbacks.onStatsChange(this.playerStats);
       this.callbacks.onOpenCrafting();
       return;
     }
 
-    // 3. Check Signal Tower (0, 5)
+    // 4. Check Signal Tower (0, 5)
     const distTower = Math.hypot(this.playerPos.x - 0, this.playerPos.z - 5);
     if (distTower < 6.0) {
-      if (this.beastsHunted.includes('caldera_titan') || (this.inventoryMaterials.titan_fang || 0) > 0) {
+      if (
+        this.beastsHunted.includes('caldera_titan') ||
+        this.beastsHunted.includes('sky_dragon') ||
+        (this.inventoryMaterials.titan_fang || 0) > 0 ||
+        this.playerStats.eggsCollected >= 3
+      ) {
         this.beaconLit = true;
         this.signalTowerProgress = 3;
         this.terrain.updateTowerStage(3, true);
@@ -828,18 +1151,18 @@ export class GameEngine {
         });
       } else {
         this.callbacks.onNotification(
-          'Slay Ignis-Rex the Caldera Titan or craft the Beacon at Campfire to ignite the Signal Tower!',
+          'Slay Ignis-Rex or Aurelius the Sky-Dragon (or collect 3 Creature Eggs) to ignite the Ancient Signal Tower!',
           'info'
         );
       }
       return;
     }
 
-    // 4. Check Carve Fallen Beasts
+    // 5. Check Carve Fallen Beasts
     for (const actor of this.beasts) {
       if (actor.state.hp <= 0 && !actor.state.carved) {
         const dist = Math.hypot(this.playerPos.x - actor.state.x, this.playerPos.z - actor.state.z);
-        if (dist < 5.2) {
+        if (dist < 6.0) {
           actor.state.carved = true;
           sound.playGather();
           this.grantBeastCarveDrops(actor.state.species);
@@ -848,7 +1171,7 @@ export class GameEngine {
       }
     }
 
-    // 5. Check Track Clues
+    // 6. Check Track Clues
     for (const c of this.clues) {
       if (!c.data.discovered) {
         const dist = Math.hypot(this.playerPos.x - c.data.x, this.playerPos.z - c.data.z);
@@ -857,45 +1180,85 @@ export class GameEngine {
           c.mesh.visible = false;
           sound.playGather();
           this.inventoryMaterials.sun_herb = (this.inventoryMaterials.sun_herb || 0) + 1;
+          this.playerStats.foodRations = Math.min(this.playerStats.maxFoodRations, this.playerStats.foodRations + 1);
           this.totalMaterialsGathered++;
           this.upgradeKnowledge(c.data.species, 'sighted');
-          this.callbacks.onNotification(`Track Examined: ${c.data.description} (+1 Sun-Herb)`, 'loot');
+          this.callbacks.onNotification(
+            `Track Examined: ${c.data.description} (+1 Sun-Herb · +1 Food Ration)`,
+            'loot'
+          );
+          this.callbacks.onStatsChange(this.playerStats);
           return;
         }
       }
     }
+
+    // 7. Check Freshwater River / Springs Hydration & Berry Foraging
+    const biome = getTerrainBiome(this.playerPos.x, this.playerPos.z);
+    if (biome === 'river' || biome === 'springs') {
+      this.drinkWaterCanteen();
+      return;
+    }
+  }
+
+  private advanceAdventureProgress(species: BeastSpecies, eventType: 'egg' | 'kill') {
+    let updated = false;
+    for (const adv of this.adventureMissions) {
+      if (adv.completed) continue;
+      if (eventType === 'egg' && adv.currentStage < 2) {
+        adv.currentStage = Math.min(adv.stages.length - 1, adv.currentStage + 1);
+        updated = true;
+      } else if (eventType === 'kill') {
+        adv.currentStage = adv.stages.length - 1;
+        adv.completed = true;
+        updated = true;
+      }
+    }
+    if (updated) {
+      this.callbacks.onAdventuresChange?.([...this.adventureMissions], this.activeAdventureIndex);
+    }
   }
 
   private grantBeastCarveDrops(species: BeastSpecies) {
+    this.playerStats.foodRations = Math.min(this.playerStats.maxFoodRations, this.playerStats.foodRations + 2);
     if (species === 'raptor') {
       this.inventoryMaterials.raptor_claw = (this.inventoryMaterials.raptor_claw || 0) + 2;
       this.inventoryMaterials.raptor_hide = (this.inventoryMaterials.raptor_hide || 0) + 2;
       this.inventoryMaterials.beast_bone = (this.inventoryMaterials.beast_bone || 0) + 2;
-      this.callbacks.onNotification('Carved: +2 Raptor Talon, +2 Raptor Hide, +2 Beast Bone!', 'loot');
+      this.callbacks.onNotification('Carved Raptor: +2 Talon, +2 Hide, +2 Bone & +2 Meat Rations!', 'loot');
     } else if (species === 'snapjaw') {
       this.inventoryMaterials.raptor_claw = (this.inventoryMaterials.raptor_claw || 0) + 2;
       this.inventoryMaterials.coral_stone = (this.inventoryMaterials.coral_stone || 0) + 2;
       this.inventoryMaterials.beast_bone = (this.inventoryMaterials.beast_bone || 0) + 3;
-      this.callbacks.onNotification('Carved River Snapjaw: +2 Talon, +2 Coral Stone, +3 Beast Bone!', 'loot');
+      this.callbacks.onNotification('Carved River Snapjaw: +2 Talon, +2 Coral Stone & +2 Fish Rations!', 'loot');
     } else if (species === 'brontoshell') {
       this.inventoryMaterials.bronto_shell = (this.inventoryMaterials.bronto_shell || 0) + 2;
       this.inventoryMaterials.coral_stone = (this.inventoryMaterials.coral_stone || 0) + 2;
-      this.callbacks.onNotification('Carved: +2 Brontoshell Carapace, +2 Coral Stone!', 'loot');
+      this.callbacks.onNotification('Carved: +2 Brontoshell Carapace, +2 Coral Stone & +2 Rations!', 'loot');
     } else if (species === 'frostfang') {
       this.inventoryMaterials.thunder_horn = (this.inventoryMaterials.thunder_horn || 0) + 2;
       this.inventoryMaterials.obsidian_shard = (this.inventoryMaterials.obsidian_shard || 0) + 2;
       this.inventoryMaterials.beast_bone = (this.inventoryMaterials.beast_bone || 0) + 3;
-      this.callbacks.onNotification('Carved Frostfang Mammoth: +2 Glacial Ivory Horn, +2 Obsidian, +3 Bone!', 'loot');
+      this.callbacks.onNotification('Carved Frostfang Mammoth: +2 Glacial Ivory, +2 Obsidian & +2 Rations!', 'loot');
     } else if (species === 'thunderhorn') {
       this.inventoryMaterials.thunder_horn = (this.inventoryMaterials.thunder_horn || 0) + 2;
       this.inventoryMaterials.obsidian_shard = (this.inventoryMaterials.obsidian_shard || 0) + 3;
-      this.callbacks.onNotification('Carved: +2 Conductive Crest-Horn, +3 Obsidian Shard!', 'loot');
+      this.callbacks.onNotification('Carved: +2 Conductive Crest-Horn, +3 Obsidian Shard & +2 Rations!', 'loot');
+    } else if (species === 'sky_dragon') {
+      this.inventoryMaterials.dragon_scale = (this.inventoryMaterials.dragon_scale || 0) + 3;
+      this.inventoryMaterials.titan_fang = (this.inventoryMaterials.titan_fang || 0) + 2;
+      this.inventoryMaterials.magma_core = (this.inventoryMaterials.magma_core || 0) + 2;
+      this.callbacks.onNotification(
+        'Carved Sky-Dragon: +3 Aetherial Dragon Scale, +2 Sovereign Fang & +2 Magma Core!',
+        'loot'
+      );
     } else if (species === 'caldera_titan') {
       this.inventoryMaterials.titan_fang = (this.inventoryMaterials.titan_fang || 0) + 2;
       this.inventoryMaterials.magma_core = (this.inventoryMaterials.magma_core || 0) + 2;
       this.callbacks.onNotification('Carved: +2 Sovereign Titan Fang, +2 Apex Magma Heart!', 'loot');
     }
     this.totalMaterialsGathered += 5;
+    this.callbacks.onStatsChange(this.playerStats);
   }
 
   private upgradeKnowledge(species: BeastSpecies, level: BeastKnowledgeLevel) {
@@ -924,9 +1287,8 @@ export class GameEngine {
     if (!this.ownedArmors.includes(id)) this.ownedArmors.push(id);
     const def = ARMOR_REGISTRY[id];
     this.playerStats.defense = def.defense;
-    this.playerStats.maxHp = 140 + def.maxHpBonus;
+    this.playerStats.maxHp = 150 + def.maxHpBonus;
     this.playerStats.hp = Math.min(this.playerStats.maxHp, this.playerStats.hp + def.maxHpBonus);
-    this.playerStats.maxStamina = 110 + def.maxStaminaBonus;
     this.hunter.updateArmor(id);
     this.callbacks.onStatsChange(this.playerStats);
   }
@@ -936,10 +1298,14 @@ export class GameEngine {
   }
 
   public respawnAtCampfire() {
+    this.isFlying = false;
+    if (this.hunter.wings) this.hunter.wings.visible = false;
     this.playerPos.set(0, this.terrain.getHeight(0, 28), 28);
     this.playerStats.hp = this.playerStats.maxHp;
-    this.playerStats.stamina = this.playerStats.maxStamina;
-    this.playerStats.healingFlasks = Math.max(this.playerStats.healingFlasks, 3);
+    this.playerStats.food = this.playerStats.maxFood;
+    this.playerStats.water = this.playerStats.maxWater;
+    this.playerStats.foodRations = Math.max(this.playerStats.foodRations, 4);
+    this.playerStats.waterCanteens = this.playerStats.maxWaterCanteens;
     this.callbacks.onStatsChange(this.playerStats);
   }
 
@@ -1013,7 +1379,19 @@ export class GameEngine {
   }
 
   private animateEnvironment(timeSec: number, dt: number) {
-    // Animate River & Ocean UV flow
+    // 1. Real Atmospheric & Fluid Physics calculation
+    const biome = getTerrainBiome(this.playerPos.x, this.playerPos.z);
+    this.currentAtmosphere = computeAtmosphericPhysics(
+      this.playerPos.x,
+      this.playerPos.y,
+      this.playerPos.z,
+      biome,
+      this.weatherSystem.currentWeather,
+      timeSec
+    );
+    this.callbacks.onAtmosphereChange?.(this.currentAtmosphere);
+
+    // 2. Animate River & Ocean UV flow
     if (this.materialCache.waterMaterial.map) {
       this.materialCache.waterMaterial.map.offset.x = (timeSec * 0.18) % 1;
       this.materialCache.waterMaterial.map.offset.y = Math.sin(timeSec * 0.8) * 0.04;
@@ -1023,7 +1401,35 @@ export class GameEngine {
     }
     this.terrain.oceanMesh.position.y = 0.35 + Math.sin(timeSec * 1.4) * 0.12;
 
-    // Animate Swimming 3D River & Ocean Fish
+    // 3. Animate 3D Air Streamlines & Thermal Updraft Columns
+    const wx = this.currentAtmosphere.windVector.x;
+    const wz = this.currentAtmosphere.windVector.z;
+    const windRot = Math.atan2(wx, wz);
+    for (const r of this.airRibbons) {
+      const drift = (timeSec * 3.8 + r.phase * 5) % 28;
+      r.mesh.position.x = r.baseX + (wx * drift) * 0.35;
+      r.mesh.position.z = r.baseZ + (wz * drift) * 0.35;
+      r.mesh.position.y = r.baseY + Math.sin(timeSec * 2 + r.phase) * 0.45;
+      r.mesh.rotation.y = windRot + Math.PI / 2;
+    }
+    for (let i = 0; i < this.thermalColumns.length; i++) {
+      const col = this.thermalColumns[i];
+      const gy = this.terrain.getHeight(col.x, col.z);
+      col.ringMesh.position.y = gy + 1.5 + ((timeSec * 3.5 + i * 2.2) % 9.5);
+      const s = 0.85 + Math.sin(timeSec * 3 + i) * 0.2;
+      col.ringMesh.scale.set(s, s, 1);
+    }
+
+    // 4. Wind Sway Physics on 3D Trees, Ferns & Shrubs
+    const foliageChildren = this.terrain.foliageGroup.children;
+    const swayAmp = Math.min(0.09, this.currentAtmosphere.windSpeedMs * 0.008);
+    for (let i = 0; i < foliageChildren.length; i += 2) {
+      const prop = foliageChildren[i];
+      prop.rotation.z = Math.sin(timeSec * 2.1 + i * 0.5) * swayAmp;
+      prop.rotation.x = Math.cos(timeSec * 1.7 + i * 0.3) * swayAmp * 0.6;
+    }
+
+    // 5. Animate Swimming 3D River & Ocean Fish
     for (const fish of this.terrain.fishActors) {
       const t = timeSec * fish.speed + fish.phase;
       const nx = fish.baseX + Math.cos(t) * fish.radiusX;
@@ -1035,7 +1441,7 @@ export class GameEngine {
       fish.mesh.rotation.z = Math.sin(t * 6) * 0.12;
     }
 
-    // Weather update
+    // 6. Weather update
     const weatherChanged = this.weatherSystem.update(dt, this.playerPos);
     if (weatherChanged) {
       this.callbacks.onWeatherChange?.(this.weatherSystem.currentWeather);
@@ -1046,7 +1452,6 @@ export class GameEngine {
     for (let i = 0; i < this.npcs.length; i++) {
       const npc = this.npcs[i];
       npc.mesh.position.y = npc.data.y + Math.sin(timeSec * 2.2 + i) * 0.04;
-      // Face player gently when nearby
       const dist = Math.hypot(this.playerPos.x - npc.data.x, this.playerPos.z - npc.data.z);
       if (dist < 6.5) {
         const targetRot = Math.atan2(this.playerPos.x - npc.data.x, this.playerPos.z - npc.data.z);
@@ -1056,15 +1461,6 @@ export class GameEngine {
   }
 
   private updatePlayer(dt: number) {
-    // Stamina regen
-    if (!this.isDodging && !this.isAttacking && !this.isChargingHeavy) {
-      const weatherMult = WEATHER_CONDITIONS[this.weatherSystem.currentWeather].staminaMultiplier ?? 1;
-      this.playerStats.stamina = Math.min(
-        this.playerStats.maxStamina,
-        this.playerStats.stamina + this.playerStats.staminaRegenRate * weatherMult * dt
-      );
-    }
-
     if (this.isChargingHeavy) {
       this.heavyChargeTime += dt;
       if (this.heavyChargeTime >= 0.75) {
@@ -1085,10 +1481,12 @@ export class GameEngine {
       this.focusLight.intensity = 0;
     }
 
-    // Dodge roll movement
+    let isMovingHoriz = false;
+
+    // Dodge roll / Air-Dash movement (Zero Stamina restriction!)
     if (this.isDodging) {
       this.dodgeTimer -= dt;
-      const rollSpeed = 12.5;
+      const rollSpeed = this.isFlying ? 18.5 : 13.5;
       this.playerPos.x += this.dodgeDirX * rollSpeed * dt;
       this.playerPos.z += this.dodgeDirZ * rollSpeed * dt;
       this.hunter.torso.rotation.x = (1 - this.dodgeTimer / 0.46) * Math.PI * 2;
@@ -1096,12 +1494,9 @@ export class GameEngine {
         this.isDodging = false;
         this.hunter.torso.rotation.x = 0;
       }
+      isMovingHoriz = true;
     } else {
       // FIXED CAMERA-RELATIVE JOYSTICK & KEYBOARD MOVEMENT:
-      // Pulling joystick UP (virtualMoveY < 0) or pressing W/ArrowUp yields moveForward > 0 (moves FRONT, into scene).
-      // Pulling joystick DOWN (virtualMoveY > 0) or pressing S/ArrowDown yields moveForward < 0 (moves BACK, toward camera).
-      // Pulling joystick RIGHT (virtualMoveX > 0) or pressing D/ArrowRight yields moveRight > 0 (moves RIGHT on screen).
-      // Pulling joystick LEFT (virtualMoveX < 0) or pressing A/ArrowLeft yields moveRight < 0 (moves LEFT on screen).
       let moveForward = -this.virtualMoveY;
       let moveRight = this.virtualMoveX;
 
@@ -1110,8 +1505,7 @@ export class GameEngine {
       if (this.keysPressed.has('KeyD') || this.keysPressed.has('ArrowRight')) moveRight += 1;
       if (this.keysPressed.has('KeyA') || this.keysPressed.has('ArrowLeft')) moveRight -= 1;
 
-      const isSprinting = this.keysPressed.has('ShiftLeft') && this.playerStats.stamina > 5;
-      const baseSpeed = isSprinting ? 10.2 : 7.4;
+      const baseSpeed = this.isFlying ? 14.2 : 8.4;
 
       const moveResult = computeCameraRelativeMovement(
         moveForward,
@@ -1122,6 +1516,7 @@ export class GameEngine {
       );
 
       if (moveResult.isMoving) {
+        isMovingHoriz = true;
         this.playerRotation = stepAngleShortestArc(
           this.playerRotation,
           moveResult.targetRotation,
@@ -1130,13 +1525,13 @@ export class GameEngine {
         this.playerPos.x += moveResult.dx;
         this.playerPos.z += moveResult.dz;
 
-        // Animated walk cycle
+        // Animated walk or flight cycle
         const walkCycle = performance.now() * 0.011;
-        this.hunter.leftLeg.rotation.x = Math.sin(walkCycle) * 0.65;
-        this.hunter.rightLeg.rotation.x = -Math.sin(walkCycle) * 0.65;
+        this.hunter.leftLeg.rotation.x = this.isFlying ? 0.25 : Math.sin(walkCycle) * 0.65;
+        this.hunter.rightLeg.rotation.x = this.isFlying ? 0.35 : -Math.sin(walkCycle) * 0.65;
         if (!this.isAttacking) {
-          this.hunter.leftArm.rotation.x = -Math.sin(walkCycle) * 0.45;
-          this.hunter.rightArm.rotation.x = Math.sin(walkCycle) * 0.45;
+          this.hunter.leftArm.rotation.x = this.isFlying ? -0.4 : -Math.sin(walkCycle) * 0.45;
+          this.hunter.rightArm.rotation.x = this.isFlying ? -0.3 : Math.sin(walkCycle) * 0.45;
         }
       } else {
         this.hunter.leftLeg.rotation.x *= 0.82;
@@ -1151,9 +1546,65 @@ export class GameEngine {
     // Clamp to Expanded 420x420 Island Bounds (-125 to +125)
     this.playerPos.x = Math.max(-125, Math.min(125, this.playerPos.x));
     this.playerPos.z = Math.max(-125, Math.min(125, this.playerPos.z));
-    const groundY = this.terrain.getHeight(this.playerPos.x, this.playerPos.z);
-    // Keep hunter wading above water surface if in shallow ocean
-    this.playerPos.y = Math.max(-0.2, groundY);
+    const groundY = Math.max(-0.2, this.terrain.getHeight(this.playerPos.x, this.playerPos.z));
+
+    // Vertical Physics: 3D Aerodynamic Flight vs Newtonian Jump & Gravity
+    if (this.isFlying) {
+      let verticalSpeed = 0;
+      if (this.keysPressed.has('Space')) verticalSpeed += 7.5;
+      if (this.keysPressed.has('KeyC') || this.keysPressed.has('ControlLeft')) verticalSpeed -= 7.5;
+
+      // Check Thermal Updraft Columns for natural convective lift!
+      for (const col of this.thermalColumns) {
+        if (Math.hypot(this.playerPos.x - col.x, this.playerPos.z - col.z) < col.radius) {
+          verticalSpeed += 4.5;
+          break;
+        }
+      }
+      verticalSpeed += this.currentAtmosphere.thermalLiftMs * 0.25;
+
+      this.playerPos.y = Math.max(groundY + 1.2, Math.min(52, this.playerPos.y + verticalSpeed * dt));
+
+      // Animate Mithril Aether-Wings flapping gently in flight
+      if (this.hunter.wings) {
+        const wingFlap = Math.sin(performance.now() * 0.009) * 0.28;
+        this.hunter.wings.children[0].rotation.y = wingFlap;
+        this.hunter.wings.children[1].rotation.y = -wingFlap;
+      }
+    } else if (!this.isGrounded) {
+      this.playerVelY -= 19.6 * dt; // Gravity
+      this.playerPos.y += this.playerVelY * dt;
+      if (this.playerPos.y <= groundY) {
+        this.playerPos.y = groundY;
+        this.playerVelY = 0;
+        this.isGrounded = true;
+        this.playerStats.isJumping = false;
+      }
+    } else {
+      this.playerPos.y = groundY;
+    }
+
+    // Animate Flowing Mastercraft Mithril Cape with Wind & Movement Physics
+    if (this.hunter.cape) {
+      const speedFactor = isMovingHoriz || this.isFlying ? 0.48 : 0.18;
+      this.hunter.cape.rotation.x =
+        speedFactor + Math.sin(performance.now() * 0.008) * (0.08 + this.currentAtmosphere.windSpeedMs * 0.01);
+    }
+
+    // Biological Survival Homeostasis (Food kcal & Water mL metabolism + cellular HP regen)
+    const biome = getTerrainBiome(this.playerPos.x, this.playerPos.z);
+    const inFreshWater = (biome === 'river' || biome === 'springs') && this.isGrounded;
+    this.playerStats = computeSurvivalMetabolism(
+      this.playerStats,
+      this.currentAtmosphere,
+      isMovingHoriz,
+      this.isFlying,
+      inFreshWater,
+      dt
+    );
+    this.playerStats.isFlying = this.isFlying;
+    this.playerStats.altitude = Math.round(this.playerPos.y * 12.5);
+    this.playerStats.airSpeed = isMovingHoriz ? (this.isFlying ? 14.2 : 8.4) : 0;
 
     this.hunter.root.position.copy(this.playerPos);
     this.hunter.root.rotation.y = this.playerRotation;
@@ -1186,8 +1637,10 @@ export class GameEngine {
 
     for (const actor of this.beasts) {
       if (actor.state.hp <= 0 || actor.hitThisSwing) continue;
-      const dist = Math.hypot(tipX - actor.state.x, tipZ - actor.state.z);
-      if (dist > 4.2) continue;
+      const distXZ = Math.hypot(tipX - actor.state.x, tipZ - actor.state.z);
+      const distY = Math.abs(this.playerPos.y - actor.state.y);
+      const hitRadius = actor.state.isFlyingBeast ? 5.8 : 4.4;
+      if (distXZ > hitRadius || distY > 7.5) continue;
 
       actor.hitThisSwing = true;
 
@@ -1200,7 +1653,7 @@ export class GameEngine {
         const sinR = Math.sin(actor.state.rotation);
         const wpWorldX = actor.state.x + wp.localOffset.x * cosR + wp.localOffset.z * sinR;
         const wpWorldZ = actor.state.z - wp.localOffset.x * sinR + wp.localOffset.z * cosR;
-        if (Math.hypot(tipX - wpWorldX, tipZ - wpWorldZ) <= wp.radius + 1.2) {
+        if (Math.hypot(tipX - wpWorldX, tipZ - wpWorldZ) <= wp.radius + 1.4) {
           wpMult = wp.damageMultiplier;
           hitWpId = wp.id;
           break;
@@ -1236,12 +1689,12 @@ export class GameEngine {
           actor.state.weakPoints[idx] = res.updated;
           if (res.justBroke) {
             actor.state.aiState = 'staggered';
-            actor.state.stateTimer = 3.6;
+            actor.state.stateTimer = 4.2;
             sound.playPartBreak();
             const bonusMat = res.updated.bonusDropMaterialId;
             this.inventoryMaterials[bonusMat] = (this.inventoryMaterials[bonusMat] || 0) + 1;
             this.callbacks.onNotification(
-              `Part Broken: ${res.updated.name}! Beast Staggered! (+1 ${bonusMat.replace('_', ' ')})`,
+              `Part Broken: ${res.updated.name}! Beast Grounded & Staggered! (+1 ${bonusMat.replace('_', ' ')})`,
               'loot'
             );
           }
@@ -1259,15 +1712,18 @@ export class GameEngine {
 
       if (actor.state.hp <= 0) {
         actor.state.aiState = 'dead';
+        const gy = this.terrain.getHeight(actor.state.x, actor.state.z);
+        actor.state.y = gy;
         actor.rig.root.rotation.z = Math.PI / 2.2;
-        actor.rig.root.position.y = actor.state.y + 0.5;
+        actor.rig.root.position.y = gy + 0.5;
         if (!this.beastsHunted.includes(actor.state.species)) {
           this.beastsHunted.push(actor.state.species);
         }
         this.upgradeKnowledge(actor.state.species, 'mastered');
         this.advanceQuestOnKill(actor.state.species);
+        this.advanceAdventureProgress(actor.state.species, 'kill');
         this.callbacks.onNotification(
-          `Slain: ${actor.state.name}! Approach and press [E] to Carve materials.`,
+          `Slain: ${actor.state.name}! Approach and press [E] to Carve materials & rations.`,
           'loot'
         );
       }
@@ -1283,7 +1739,7 @@ export class GameEngine {
       this.currentQuestIndex = 3;
     } else if (species === 'thunderhorn' && this.currentQuestIndex <= 3) {
       this.currentQuestIndex = 4;
-    } else if (species === 'caldera_titan' && this.currentQuestIndex <= 4) {
+    } else if ((species === 'caldera_titan' || species === 'sky_dragon') && this.currentQuestIndex <= 4) {
       this.currentQuestIndex = 5;
     }
     this.callbacks.onQuestUpdate(this.currentQuestIndex);
@@ -1291,7 +1747,7 @@ export class GameEngine {
 
   private updateBeasts(dt: number) {
     let closestBeast: BeastState | null = null;
-    let closestDist = 42;
+    let closestDist = 48;
 
     for (const actor of this.beasts) {
       const s = actor.state;
@@ -1309,7 +1765,7 @@ export class GameEngine {
 
       // Check snare traps
       for (const trap of this.traps) {
-        if (trap.active && Math.hypot(s.x - trap.x, s.z - trap.z) < 2.2) {
+        if (trap.active && Math.hypot(s.x - trap.x, s.z - trap.z) < 2.5) {
           trap.active = false;
           trap.mesh.visible = false;
           s.snaredTimer = 4.5;
@@ -1335,23 +1791,26 @@ export class GameEngine {
           s.aiState = 'chase';
         }
       } else if (s.aiState === 'patrol') {
-        actor.patrolAngle += dt * 0.45;
-        const targetX = actor.homeX + Math.cos(actor.patrolAngle) * 7;
-        const targetZ = actor.homeZ + Math.sin(actor.patrolAngle) * 7;
+        const orbitSpeed = s.isFlyingBeast ? 0.65 : 0.45;
+        const orbitRadius = s.isFlyingBeast ? 18 : 7;
+        actor.patrolAngle += dt * orbitSpeed;
+        const targetX = actor.homeX + Math.cos(actor.patrolAngle) * orbitRadius;
+        const targetZ = actor.homeZ + Math.sin(actor.patrolAngle) * orbitRadius;
         const dx = targetX - s.x;
         const dz = targetZ - s.z;
         s.rotation = stepAngleShortestArc(s.rotation, Math.atan2(dx, dz), dt * 4);
-        s.x += Math.sin(s.rotation) * 2.4 * dt;
-        s.z += Math.cos(s.rotation) * 2.4 * dt;
+        const patrolSpeed = s.isFlyingBeast ? 7.5 : 2.4;
+        s.x += Math.sin(s.rotation) * patrolSpeed * dt;
+        s.z += Math.cos(s.rotation) * patrolSpeed * dt;
 
-        if (distToPlayer < 22) {
+        if (distToPlayer < (s.isFlyingBeast ? 28 : 22)) {
           s.aiState = 'chase';
           this.upgradeKnowledge(s.species, 'sighted');
           sound.playBeastRoar(s.species);
         }
       } else if (s.aiState === 'chase') {
         s.rotation = stepAngleShortestArc(s.rotation, angleToPlayer, dt * 6);
-        const moveSpeed = s.enraged ? 6.2 : 4.6;
+        const moveSpeed = s.isFlyingBeast ? (s.enraged ? 9.8 : 7.8) : s.enraged ? 6.2 : 4.6;
         if (distToPlayer > 4.2) {
           s.x += Math.sin(s.rotation) * moveSpeed * dt;
           s.z += Math.cos(s.rotation) * moveSpeed * dt;
@@ -1361,11 +1820,10 @@ export class GameEngine {
           actor.chargeDirX = Math.sin(angleToPlayer);
           actor.chargeDirZ = Math.cos(angleToPlayer);
         }
-        if (distToPlayer > 36) {
+        if (distToPlayer > 42) {
           s.aiState = 'patrol';
         }
       } else if (s.aiState === 'telegraph_charge') {
-        // Rear back / open jaw windup tell
         actor.rig.head.rotation.x = -0.35;
         actor.rig.jaw.rotation.x = 0.45;
         if (s.stateTimer <= 0) {
@@ -1380,10 +1838,18 @@ export class GameEngine {
         s.z += actor.chargeDirZ * dashSpeed * dt;
 
         // Check player hit
-        if (Math.hypot(this.playerPos.x - s.x, this.playerPos.z - s.z) < 2.9) {
+        if (
+          Math.hypot(this.playerPos.x - s.x, this.playerPos.z - s.z) < 3.1 &&
+          Math.abs(this.playerPos.y - s.y) < 4.5
+        ) {
           const elapsedDodge = 0.46 - this.dodgeTimer;
           if (!this.isDodging || !isDodgeInvulnerable(elapsedDodge, 0.46)) {
-            const rawDmg = s.species === 'caldera_titan' ? 38 : s.species === 'frostfang' ? 32 : 24;
+            const rawDmg =
+              s.species === 'caldera_titan' || s.species === 'sky_dragon'
+                ? 36
+                : s.species === 'frostfang'
+                ? 30
+                : 22;
             const taken = calculatePlayerDamageTaken(rawDmg, this.playerStats.defense, 'hunter');
             this.playerStats.hp = Math.max(0, this.playerStats.hp - taken);
             this.cameraShakeIntensity = 0.35;
@@ -1402,16 +1868,37 @@ export class GameEngine {
         }
       }
 
-      s.y = this.terrain.getHeight(s.x, s.z);
+      const groundY = this.terrain.getHeight(s.x, s.z);
+      const animT = performance.now() * 0.008;
+
+      if (s.isFlyingBeast) {
+        if (s.aiState === 'staggered') {
+          s.y = groundY + 0.5;
+        } else if (s.aiState === 'chase' || s.aiState === 'attack_charge' || s.aiState === 'telegraph_charge') {
+          // Swoop toward player altitude for aerial or ground engagement
+          const targetY = Math.max(groundY + 2.2, this.playerPos.y + 1.2);
+          s.y += (targetY - s.y) * Math.min(1, dt * 3.5);
+        } else {
+          const cruiseY = groundY + (s.flightAltitude ?? 9.5) + Math.sin(animT * 0.9) * 1.4;
+          s.y += (cruiseY - s.y) * Math.min(1, dt * 2.5);
+        }
+
+        // Flap articulated Dragon Wings (legs[0] and legs[1])
+        if (actor.rig.legs.length >= 2) {
+          const flap = Math.sin(animT * 1.8) * 0.55;
+          actor.rig.legs[0].rotation.z = flap;
+          actor.rig.legs[1].rotation.z = -flap;
+        }
+      } else {
+        s.y = groundY;
+        actor.rig.legs.forEach((leg, idx) => {
+          leg.rotation.x = Math.sin(animT + idx * Math.PI) * 0.32;
+        });
+      }
+
       actor.rig.root.position.set(s.x, s.y, s.z);
       actor.rig.root.rotation.y = s.rotation;
-
-      // Leg & Tail animation
-      const animT = performance.now() * 0.008;
-      actor.rig.tail.rotation.y = Math.sin(animT) * 0.22;
-      actor.rig.legs.forEach((leg, idx) => {
-        leg.rotation.x = Math.sin(animT + idx * Math.PI) * 0.32;
-      });
+      actor.rig.tail.rotation.y = Math.sin(animT) * 0.25;
     }
 
     this.callbacks.onTargetChange(closestBeast);
@@ -1430,7 +1917,6 @@ export class GameEngine {
         if (p.mesh.position.y <= gy + 0.15) {
           p.mesh.position.y = gy + 0.15;
           p.landed = true;
-          // Lure nearby beasts
           for (const b of this.beasts) {
             if (b.state.hp > 0 && Math.hypot(b.state.x - p.mesh.position.x, b.state.z - p.mesh.position.z) < 22) {
               b.homeX = p.mesh.position.x;
@@ -1459,11 +1945,12 @@ export class GameEngine {
   }
 
   private updateCamera(dt: number) {
+    const dist = this.isFlying ? 9.4 : this.cameraDistance;
     const camX =
-      this.playerPos.x - Math.sin(this.cameraYaw) * Math.cos(this.cameraPitch) * this.cameraDistance;
+      this.playerPos.x - Math.sin(this.cameraYaw) * Math.cos(this.cameraPitch) * dist;
     const camZ =
-      this.playerPos.z - Math.cos(this.cameraYaw) * Math.cos(this.cameraPitch) * this.cameraDistance;
-    const desiredY = this.playerPos.y + 1.8 + Math.sin(this.cameraPitch) * this.cameraDistance;
+      this.playerPos.z - Math.cos(this.cameraYaw) * Math.cos(this.cameraPitch) * dist;
+    const desiredY = this.playerPos.y + 1.8 + Math.sin(this.cameraPitch) * dist;
     const groundAtCam = this.terrain.getHeight(camX, camZ) + 0.85;
     let camY = Math.max(groundAtCam, desiredY);
 
@@ -1477,6 +1964,17 @@ export class GameEngine {
   }
 
   private checkInteractPrompts() {
+    for (const nest of this.eggNests) {
+      if (
+        !nest.data.collected &&
+        Math.hypot(this.playerPos.x - nest.data.x, this.playerPos.z - nest.data.z) < 5.0
+      ) {
+        this.callbacks.onInteractPrompt(
+          `Press [E] or Tap to Extract ${nest.data.name} (${nest.data.caloricValueKcal} kcal)`
+        );
+        return;
+      }
+    }
     for (const npc of this.npcs) {
       if (Math.hypot(this.playerPos.x - npc.data.x, this.playerPos.z - npc.data.z) < 4.2) {
         this.callbacks.onInteractPrompt(`Press [E] or Tap to Speak with ${npc.data.name}`);
@@ -1484,7 +1982,7 @@ export class GameEngine {
       }
     }
     if (Math.hypot(this.playerPos.x - 0, this.playerPos.z - 28) < 5.2) {
-      this.callbacks.onInteractPrompt('Press [E] or Tap to Rest at Campfire & Craft');
+      this.callbacks.onInteractPrompt('Press [E] or Tap to Rest, Cook & Forge at Campfire');
       return;
     }
     if (Math.hypot(this.playerPos.x - 0, this.playerPos.z - 5) < 6.0) {
@@ -1495,7 +1993,7 @@ export class GameEngine {
       if (
         actor.state.hp <= 0 &&
         !actor.state.carved &&
-        Math.hypot(this.playerPos.x - actor.state.x, this.playerPos.z - actor.state.z) < 5.2
+        Math.hypot(this.playerPos.x - actor.state.x, this.playerPos.z - actor.state.z) < 6.0
       ) {
         this.callbacks.onInteractPrompt(`Press [E] or Tap to Carve ${actor.state.name}`);
         return;

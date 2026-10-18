@@ -82,6 +82,19 @@ const SPECS: Record<string, ReferenceArtSpec> = {
       { label: 'Basalt-Plated Hindquarters', x: 0.2, y: 0.26, targetX: 0.32, targetY: 0.44 },
     ],
   },
+  sky_dragon: {
+    id: 'sky_dragon',
+    title: 'AURELIUS · SKY-WYVERN DRAGON',
+    subtitle: '2D Aerodynamic Dragon Reference & 3D Winged Rig Blueprint',
+    category: 'beasts',
+    dimensions: 'Wingspan: 18.2m | Length: 14.8m | Wing Loading: 342 N/m²',
+    palette: ['#1e1b4b', '#38bdf8', '#facc15', '#7dd3fc'],
+    callouts: [
+      { label: 'Draconic Flame-Gland Maw (1.75x)', x: 0.78, y: 0.22, targetX: 0.68, targetY: 0.38 },
+      { label: 'Articulated Wing Patagium Membrane (1.55x)', x: 0.48, y: 0.16, targetX: 0.46, targetY: 0.34 },
+      { label: 'Aerodynamic Rudder Tail Fin', x: 0.18, y: 0.28, targetX: 0.22, targetY: 0.48 },
+    ],
+  },
   caldera_titan: {
     id: 'caldera_titan',
     title: 'CALDERA TITAN',
@@ -97,15 +110,15 @@ const SPECS: Record<string, ReferenceArtSpec> = {
   },
   hunter_koa: {
     id: 'hunter_koa',
-    title: 'HUNTER KOA (PLAYER)',
-    subtitle: '2D Character Reference & 3D Articulated Rig',
+    title: 'MASTERCRAFT MITHRIL VANGUARD · BEYOND SKYRIM2',
+    subtitle: '2D Mithril Knight Reference & 3D Sketchfab + Procedural Rig',
     category: 'characters',
-    dimensions: 'Height: 1.84m | Gear: Obsidian Spear & Bone Pauldrons',
-    palette: ['#c68652', '#78350f', '#f59e0b', '#38bdf8'],
+    dimensions: 'Height: 1.86m | Panoply: Silver-Blue Mithril & Gold Filigree',
+    palette: ['#e0f2fe', '#38bdf8', '#facc15', '#1d4ed8'],
     callouts: [
-      { label: 'Crimson War-Paint & Braided Topknot', x: 0.74, y: 0.2, targetX: 0.52, targetY: 0.26 },
-      { label: 'Carved Bone Pauldrons & Hide Chestplate', x: 0.22, y: 0.34, targetX: 0.46, targetY: 0.44 },
-      { label: 'Socketed Right-Hand Weapon Mount', x: 0.76, y: 0.74, targetX: 0.62, targetY: 0.56 },
+      { label: 'Plumed Mithril Winged-Crest Helm', x: 0.74, y: 0.2, targetX: 0.52, targetY: 0.26 },
+      { label: 'Silver-Blue Mithril Cuirass & Gold Filigree', x: 0.22, y: 0.34, targetX: 0.46, targetY: 0.44 },
+      { label: 'Pleated Mithril Tassets & Aetherial Wings', x: 0.76, y: 0.74, targetX: 0.62, targetY: 0.56 },
     ],
   },
   chief_kael: {
@@ -413,6 +426,37 @@ function drawSilhouetteAndAnatomy(
     ctx.moveTo(84, -8);
     ctx.lineTo(112, -28);
     ctx.stroke();
+  } else if (id === 'sky_dragon') {
+    // Winged Sky-Dragon silhouette with spread patagium wings, horned head, and arrow tail
+    ctx.fillStyle = '#1e1b4b';
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(-135, 18);
+    ctx.quadraticCurveTo(-65, -8, -12, -14);
+    // Great Wing Arch
+    ctx.lineTo(-48, -86);
+    ctx.lineTo(15, -72);
+    ctx.lineTo(28, -22);
+    // Neck & Horned Dragon Head
+    ctx.lineTo(76, -54);
+    ctx.lineTo(118, -46);
+    ctx.lineTo(95, -24);
+    ctx.lineTo(44, 12);
+    ctx.quadraticCurveTo(-25, 26, -135, 18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Glowing Aether Core & Wing Veins
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-10, -18);
+    ctx.lineTo(-36, -74);
+    ctx.moveTo(-10, -18);
+    ctx.lineTo(6, -64);
+    ctx.stroke();
   } else if (id === 'caldera_titan') {
     // Colossal apex biped + glowing magma chest + dorsal vents + obsidian horns
     ctx.fillStyle = '#18181b';
@@ -689,3 +733,7 @@ export function render2DReferenceCardDataURL(
 
   return canvas.toDataURL('image/png');
 }
+
+export const REFERENCE_ART_SPECS = SPECS;
+export const generateReferenceImageDataUrl = render2DReferenceCardDataURL;
+

@@ -18,6 +18,11 @@ export interface HunterRig {
   leftLeg: THREE.Group;
   rightLeg: THREE.Group;
   weaponMount: THREE.Group;
+  cape?: THREE.Mesh;
+  wings?: THREE.Group;
+  wingsGroup?: THREE.Group;
+  leftWing?: THREE.Group;
+  rightWing?: THREE.Group;
   armorPads: THREE.Mesh[];
   updateWeapon: (weaponId: WeaponId) => void;
   updateArmor: (armorId: ArmorId) => void;
@@ -29,113 +34,264 @@ export interface BeastRig {
   head: THREE.Group;
   jaw: THREE.Group;
   tail: THREE.Group;
+  leftWing?: THREE.Group;
+  rightWing?: THREE.Group;
   legs: THREE.Group[];
   accentMeshes: THREE.Mesh[];
   weakPointIndicators: Map<string, THREE.Mesh>;
 }
 
 /**
- * Builds the 3D Hunter character model with articulated joints, facial features, warpaint, and equipment mounts.
+ * Builds the 3D Hunter character model clad in the Mastercraft Mithril Armor Set
+ * (inspired by Beyond Skyrim2 by Royraj Vichaidit) with silver-blue Mithril plate,
+ * gold filigree trim, plumed winged helm, armored tasset skirt, flowing royal cape,
+ * and deployable Aetherial Flight Wings.
  */
-export function buildHunterModel(mat: MaterialCache): HunterRig {
+export function buildHunterModel(mat: MaterialCache, initialArmor: ArmorId = 'scavenger_rags'): HunterRig {
   const root = new THREE.Group();
 
   const torso = new THREE.Group();
   torso.position.set(0, 1.05, 0);
   root.add(torso);
 
-  // Chest & Muscular Upper Torso
-  const chestGeo = new THREE.CylinderGeometry(0.31, 0.24, 0.72, 12);
-  const chestMesh = new THREE.Mesh(chestGeo, mat.hunterSkin);
+  // 1. Ornate Mastercraft Mithril Cuirass (Breastplate)
+  const chestGeo = new THREE.CylinderGeometry(0.32, 0.25, 0.74, 16);
+  const chestMesh = new THREE.Mesh(chestGeo, mat.mithrilSilverMaterial.clone());
   chestMesh.castShadow = true;
   torso.add(chestMesh);
 
-  // Bone Necklace & Tribal Chest Strap
-  const necklaceGeo = new THREE.TorusGeometry(0.24, 0.03, 6, 14);
-  necklaceGeo.rotateX(Math.PI / 2);
-  const necklace = new THREE.Mesh(necklaceGeo, mat.boneMaterial);
-  necklace.position.set(0, 0.31, 0.03);
-  torso.add(necklace);
+  // Sculpted Mithril Pectoral Plate + Gold Filigree Trim Arches
+  const pectoralPlate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.36, 0.16),
+    mat.mithrilSilverMaterial.clone()
+  );
+  pectoralPlate.position.set(0, 0.14, 0.19);
+  pectoralPlate.castShadow = true;
+  torso.add(pectoralPlate);
 
-  // Kilt / Tunic Skirt
-  const kiltGeo = new THREE.CylinderGeometry(0.25, 0.35, 0.42, 12);
-  const kiltMat = new THREE.MeshStandardMaterial({ color: 0x785a46, roughness: 0.75 });
-  const kiltMesh = new THREE.Mesh(kiltGeo, kiltMat);
-  kiltMesh.position.set(0, -0.35, 0);
+  const goldCollarGeo = new THREE.TorusGeometry(0.25, 0.032, 8, 20);
+  goldCollarGeo.rotateX(Math.PI / 2);
+  const goldCollar = new THREE.Mesh(goldCollarGeo, mat.mithrilGoldTrimMaterial);
+  goldCollar.position.set(0, 0.34, 0.02);
+  torso.add(goldCollar);
+
+  // Glowing Aetherial Mithril Chest Gem
+  const chestGem = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.075, 0),
+    new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 1.2,
+      metalness: 0.9,
+      roughness: 0.1,
+    })
+  );
+  chestGem.position.set(0, 0.16, 0.28);
+  torso.add(chestGem);
+
+  // Gold Filigree Rib Trim Bands
+  for (const ry of [0.02, -0.1]) {
+    const ribTrim = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.285, 0.275, 0.035, 16),
+      mat.mithrilGoldTrimMaterial
+    );
+    ribTrim.position.set(0, ry, 0.01);
+    torso.add(ribTrim);
+  }
+
+  // 2. Pleated Mithril Tassets & Armored Royal Skirt
+  const kiltGeo = new THREE.CylinderGeometry(0.26, 0.38, 0.44, 16);
+  const kiltMesh = new THREE.Mesh(kiltGeo, mat.mithrilSilverMaterial.clone());
+  kiltMesh.position.set(0, -0.36, 0);
   kiltMesh.castShadow = true;
   torso.add(kiltMesh);
 
-  // Belt & Trophy Pouches
-  const beltMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.265, 0.265, 0.1, 12), mat.woodMaterial);
+  // Gold-Trimmed Tasset Plates around Skirt
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2;
+    const tasset = new THREE.Mesh(
+      new THREE.BoxGeometry(0.14, 0.34, 0.04),
+      mat.mithrilGoldTrimMaterial
+    );
+    tasset.position.set(Math.sin(angle) * 0.31, -0.35, Math.cos(angle) * 0.31);
+    tasset.rotation.y = angle;
+    torso.add(tasset);
+  }
+
+  // Gilded War Belt
+  const beltMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.28, 0.28, 0.09, 16),
+    mat.mithrilGoldTrimMaterial
+  );
   beltMesh.position.set(0, -0.18, 0);
   torso.add(beltMesh);
 
-  // Head & Expressive Face
+  // 3. Flowing Royal Mithril Mantle Cape (animates with wind & velocity)
+  const capeGeo = new THREE.BoxGeometry(0.62, 1.05, 0.03);
+  capeGeo.translate(0, -0.5, 0);
+  const cape = new THREE.Mesh(capeGeo, mat.mithrilCapeMaterial);
+  cape.position.set(0, 0.32, -0.22);
+  cape.rotation.x = 0.16;
+  cape.castShadow = true;
+  torso.add(cape);
+
+  // 4. Deployable Aetherial Mithril Flight Wings (toggled via [V] or HUD Fly button)
+  const wingsGroup = new THREE.Group();
+  wingsGroup.position.set(0, 0.24, -0.2);
+  wingsGroup.visible = false;
+  torso.add(wingsGroup);
+
+  const wingMat = new THREE.MeshStandardMaterial({
+    color: 0x38bdf8,
+    emissive: 0x0284c7,
+    emissiveIntensity: 0.65,
+    metalness: 0.75,
+    roughness: 0.2,
+    side: THREE.DoubleSide,
+  });
+
+  const buildWingSide = (dir: 1 | -1) => {
+    const wGroup = new THREE.Group();
+    const spar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.035, 0.02, 1.85, 8),
+      mat.mithrilGoldTrimMaterial
+    );
+    spar.rotation.z = dir * -1.15;
+    spar.position.set(dir * 0.85, 0.35, 0);
+    wGroup.add(spar);
+
+    for (let f = 0; f < 5; f++) {
+      const featherBlade = new THREE.Mesh(
+        new THREE.BoxGeometry(0.14, 0.95 - f * 0.11, 0.02),
+        wingMat
+      );
+      featherBlade.position.set(dir * (0.35 + f * 0.32), 0.05 + f * 0.04, -0.02);
+      featherBlade.rotation.z = dir * -0.35;
+      wGroup.add(featherBlade);
+    }
+    return wGroup;
+  };
+
+  const leftWing = buildWingSide(1);
+  const rightWing = buildWingSide(-1);
+  wingsGroup.add(leftWing, rightWing);
+
+  // 5. Head & Mastercraft Mithril Winged-Crest Helm
   const head = new THREE.Group();
-  head.position.set(0, 0.56, 0);
+  head.position.set(0, 0.58, 0);
   torso.add(head);
 
-  const skullMesh = new THREE.Mesh(new THREE.SphereGeometry(0.23, 14, 14), mat.hunterSkin);
-  skullMesh.castShadow = true;
-  head.add(skullMesh);
+  const helmDome = new THREE.Mesh(
+    new THREE.SphereGeometry(0.245, 16, 16),
+    mat.mithrilSilverMaterial.clone()
+  );
+  helmDome.castShadow = true;
+  head.add(helmDome);
 
-  // Eyes (facing +Z)
-  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.2 });
-  const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 8), eyeMat);
-  leftEye.position.set(0.08, 0.04, 0.2);
-  const rightEye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 8), eyeMat);
-  rightEye.position.set(-0.08, 0.04, 0.2);
-  head.add(leftEye, rightEye);
+  // Glowing Visor Slit (facing +Z)
+  const visorMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 0.055, 0.08),
+    new THREE.MeshStandardMaterial({
+      color: 0x7dd3fc,
+      emissive: 0x38bdf8,
+      emissiveIntensity: 1.4,
+    })
+  );
+  visorMesh.position.set(0, 0.03, 0.21);
+  head.add(visorMesh);
 
-  // Crimson Tribal Headband & Feathers
-  const bandMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.238, 0.238, 0.06, 14), mat.tribalClothRed);
-  bandMesh.position.set(0, 0.09, 0);
-  head.add(bandMesh);
+  // Golden Helm Crown Circlet & Winged Cheekguards
+  const crownBand = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.252, 0.252, 0.065, 16),
+    mat.mithrilGoldTrimMaterial
+  );
+  crownBand.position.set(0, 0.09, 0);
+  head.add(crownBand);
 
-  // Hair Crest & Braids
-  const hairMesh = new THREE.Mesh(new THREE.ConeGeometry(0.21, 0.36, 10), mat.hunterHair);
-  hairMesh.position.set(0, 0.22, -0.05);
-  hairMesh.rotation.x = -0.45;
-  head.add(hairMesh);
-
-  for (const fx of [-0.07, 0, 0.07]) {
-    const feather = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.24, 5), mat.tribalGold);
-    feather.position.set(fx, 0.28, -0.12);
-    feather.rotation.x = -0.5;
-    head.add(feather);
+  for (const side of [-1, 1]) {
+    const helmWing = new THREE.Mesh(
+      new THREE.ConeGeometry(0.06, 0.34, 5),
+      mat.mithrilGoldTrimMaterial
+    );
+    helmWing.position.set(side * 0.25, 0.18, -0.04);
+    helmWing.rotation.x = -0.35;
+    helmWing.rotation.z = side * -0.3;
+    head.add(helmWing);
   }
 
-  // Shoulder Pauldrons
-  const leftPad = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 10), kiltMat.clone());
-  leftPad.position.set(0.36, 0.28, 0);
-  leftPad.scale.set(1.15, 0.75, 1.15);
+  // Royal Azure-Gold Helm Plume Crest
+  const plumeCrest = new THREE.Mesh(
+    new THREE.ConeGeometry(0.14, 0.42, 10),
+    mat.mithrilCapeMaterial
+  );
+  plumeCrest.position.set(0, 0.27, -0.08);
+  plumeCrest.rotation.x = -0.55;
+  head.add(plumeCrest);
+
+  // 6. Layered Mastercraft Mithril Shoulder Pauldrons
+  const leftPad = new THREE.Mesh(
+    new THREE.SphereGeometry(0.19, 12, 12),
+    mat.mithrilSilverMaterial.clone()
+  );
+  leftPad.position.set(0.39, 0.29, 0);
+  leftPad.scale.set(1.22, 0.82, 1.22);
   torso.add(leftPad);
 
-  const rightPad = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 10), kiltMat.clone());
-  rightPad.position.set(-0.36, 0.28, 0);
-  rightPad.scale.set(1.15, 0.75, 1.15);
+  const leftPadTrim = new THREE.Mesh(
+    new THREE.TorusGeometry(0.18, 0.025, 6, 14),
+    mat.mithrilGoldTrimMaterial
+  );
+  leftPadTrim.rotation.x = Math.PI / 2;
+  leftPadTrim.position.set(0.39, 0.26, 0);
+  torso.add(leftPadTrim);
+
+  const rightPad = new THREE.Mesh(
+    new THREE.SphereGeometry(0.19, 12, 12),
+    mat.mithrilSilverMaterial.clone()
+  );
+  rightPad.position.set(-0.39, 0.29, 0);
+  rightPad.scale.set(1.22, 0.82, 1.22);
   torso.add(rightPad);
 
-  // Left Arm
+  const rightPadTrim = new THREE.Mesh(
+    new THREE.TorusGeometry(0.18, 0.025, 6, 14),
+    mat.mithrilGoldTrimMaterial
+  );
+  rightPadTrim.rotation.x = Math.PI / 2;
+  rightPadTrim.position.set(-0.39, 0.26, 0);
+  torso.add(rightPadTrim);
+
+  // 7. Articulated Mithril Vambraces & Gauntlets
   const leftArm = new THREE.Group();
-  leftArm.position.set(0.36, 0.24, 0);
-  const leftArmMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.07, 0.56, 10), mat.hunterSkin);
+  leftArm.position.set(0.38, 0.24, 0);
+  const leftArmMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.09, 0.075, 0.56, 12),
+    mat.mithrilSilverMaterial.clone()
+  );
   leftArmMesh.position.set(0, -0.24, 0);
   leftArmMesh.castShadow = true;
   leftArm.add(leftArmMesh);
-  const leftBracer = new THREE.Mesh(new THREE.CylinderGeometry(0.082, 0.078, 0.18, 10), mat.woodMaterial);
+  const leftBracer = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.092, 0.086, 0.2, 12),
+    mat.mithrilGoldTrimMaterial
+  );
   leftBracer.position.set(0, -0.38, 0);
   leftArm.add(leftBracer);
   torso.add(leftArm);
 
-  // Right Arm + Weapon Mount
   const rightArm = new THREE.Group();
-  rightArm.position.set(-0.36, 0.24, 0);
-  const rightArmMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.07, 0.56, 10), mat.hunterSkin);
+  rightArm.position.set(-0.38, 0.24, 0);
+  const rightArmMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.09, 0.075, 0.56, 12),
+    mat.mithrilSilverMaterial.clone()
+  );
   rightArmMesh.position.set(0, -0.24, 0);
   rightArmMesh.castShadow = true;
   rightArm.add(rightArmMesh);
-  const rightBracer = new THREE.Mesh(new THREE.CylinderGeometry(0.082, 0.078, 0.18, 10), mat.woodMaterial);
+  const rightBracer = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.092, 0.086, 0.2, 12),
+    mat.mithrilGoldTrimMaterial
+  );
   rightBracer.position.set(0, -0.38, 0);
   rightArm.add(rightBracer);
 
@@ -144,30 +300,42 @@ export function buildHunterModel(mat: MaterialCache): HunterRig {
   rightArm.add(weaponMount);
   torso.add(rightArm);
 
-  // Legs & Boots
+  // 8. Articulated Mithril Greaves & Sabatons
   const leftLeg = new THREE.Group();
   leftLeg.position.set(0.14, 0.65, 0);
-  const leftLegMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.08, 0.65, 10), mat.hunterSkin);
+  const leftLegMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.11, 0.085, 0.65, 12),
+    mat.mithrilSilverMaterial.clone()
+  );
   leftLegMesh.position.set(0, -0.32, 0);
   leftLegMesh.castShadow = true;
   leftLeg.add(leftLegMesh);
-  const leftBoot = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.26), mat.woodMaterial);
+  const leftBoot = new THREE.Mesh(
+    new THREE.BoxGeometry(0.17, 0.22, 0.28),
+    mat.mithrilGoldTrimMaterial
+  );
   leftBoot.position.set(0, -0.56, 0.04);
   leftLeg.add(leftBoot);
   root.add(leftLeg);
 
   const rightLeg = new THREE.Group();
   rightLeg.position.set(-0.14, 0.65, 0);
-  const rightLegMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.08, 0.65, 10), mat.hunterSkin);
+  const rightLegMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.11, 0.085, 0.65, 12),
+    mat.mithrilSilverMaterial.clone()
+  );
   rightLegMesh.position.set(0, -0.32, 0);
   rightLegMesh.castShadow = true;
   rightLeg.add(rightLegMesh);
-  const rightBoot = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.26), mat.woodMaterial);
+  const rightBoot = new THREE.Mesh(
+    new THREE.BoxGeometry(0.17, 0.22, 0.28),
+    mat.mithrilGoldTrimMaterial
+  );
   rightBoot.position.set(0, -0.56, 0.04);
   rightLeg.add(rightBoot);
   root.add(rightLeg);
 
-  const armorPads = [kiltMesh, leftPad, rightPad];
+  const armorPads = [chestMesh, pectoralPlate, kiltMesh, leftPad, rightPad, helmDome];
 
   const updateWeapon = (weaponId: WeaponId) => {
     while (weaponMount.children.length > 0) {
@@ -176,52 +344,52 @@ export function buildHunterModel(mat: MaterialCache): HunterRig {
     const def = WEAPON_REGISTRY[weaponId] || WEAPON_REGISTRY.flint_spear;
     const spearGroup = new THREE.Group();
 
-    const shaftGeo = new THREE.CylinderGeometry(0.032, 0.028, 2.35, 8);
+    const shaftGeo = new THREE.CylinderGeometry(0.034, 0.03, 2.4, 10);
     shaftGeo.rotateX(Math.PI / 2);
-    const shaftMat = new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.65 });
+    const shaftMat = new THREE.MeshStandardMaterial({
+      color: def.color,
+      metalness: 0.65,
+      roughness: 0.3,
+    });
     const shaft = new THREE.Mesh(shaftGeo, shaftMat);
     shaft.position.set(0, 0, 0.55);
     spearGroup.add(shaft);
 
-    const tipGeo = new THREE.ConeGeometry(0.095, 0.52, 6);
+    const tipGeo = new THREE.ConeGeometry(0.105, 0.58, 8);
     tipGeo.rotateX(Math.PI / 2);
     const tipMat = new THREE.MeshStandardMaterial({
       color: def.accentColor,
-      emissive: def.tier >= 3 ? def.accentColor : '#000000',
-      emissiveIntensity: def.tier >= 3 ? 0.55 : 0,
-      metalness: 0.6,
-      roughness: 0.25,
+      emissive: def.accentColor,
+      emissiveIntensity: 0.45,
+      metalness: 0.85,
+      roughness: 0.15,
     });
     const tip = new THREE.Mesh(tipGeo, tipMat);
-    tip.position.set(0, 0, 1.85);
+    tip.position.set(0, 0, 1.88);
     spearGroup.add(tip);
 
-    if (def.tier >= 2) {
-      const barbGeo = new THREE.ConeGeometry(0.06, 0.25, 4);
-      barbGeo.rotateZ(Math.PI / 3);
-      const barbL = new THREE.Mesh(barbGeo, mat.boneMaterial);
-      barbL.position.set(0.07, 0, 1.55);
-      const barbR = new THREE.Mesh(barbGeo, mat.boneMaterial);
-      barbR.position.set(-0.07, 0, 1.55);
-      barbR.rotation.y = Math.PI;
-      spearGroup.add(barbL, barbR);
-    }
+    const crossguard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 0.06, 0.06),
+      mat.mithrilGoldTrimMaterial
+    );
+    crossguard.position.set(0, 0, 1.56);
+    spearGroup.add(crossguard);
 
     weaponMount.add(spearGroup);
   };
 
   const updateArmor = (armorId: ArmorId) => {
     const def = ARMOR_REGISTRY[armorId] || ARMOR_REGISTRY.scavenger_rags;
-    armorPads.forEach((mesh, idx) => {
+    armorPads.forEach((mesh) => {
       const m = mesh.material as THREE.MeshStandardMaterial;
-      m.color.set(idx === 0 ? def.color : def.trimColor);
-      m.metalness = def.tier >= 3 ? 0.45 : 0.1;
-      m.roughness = def.tier >= 3 ? 0.35 : 0.75;
+      m.color.set(def.color || '#bae6fd');
+      m.metalness = 0.84;
+      m.roughness = 0.22;
     });
   };
 
   updateWeapon('flint_spear');
-  updateArmor('scavenger_rags');
+  updateArmor(initialArmor);
 
   return {
     root,
@@ -232,6 +400,11 @@ export function buildHunterModel(mat: MaterialCache): HunterRig {
     leftLeg,
     rightLeg,
     weaponMount,
+    cape,
+    wings: wingsGroup,
+    wingsGroup,
+    leftWing,
+    rightWing,
     armorPads,
     updateWeapon,
     updateArmor,
@@ -805,6 +978,127 @@ export function buildBeastModel(species: BeastSpecies, mat: MaterialCache): Beas
       root.add(leg);
       legs.push(leg);
     }
+  } else if (species === 'sky_dragon') {
+    // SKY DRAGON: Aurelius, Aetherial Sky-Wyvern (Flying Dragon with Articulated Wings)
+    body.position.set(0, 2.35, 0);
+    root.add(body);
+
+    const torsoGeo = new THREE.CylinderGeometry(0.75, 0.92, 3.6, 14);
+    torsoGeo.rotateX(Math.PI / 2);
+    const torsoMesh = new THREE.Mesh(torsoGeo, skinMat);
+    torsoMesh.castShadow = true;
+    body.add(torsoMesh);
+
+    const bellyMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.76, 3.3, 12), bellyMat);
+    bellyMesh.rotateX(Math.PI / 2);
+    bellyMesh.position.set(0, -0.22, 0);
+    body.add(bellyMesh);
+
+    // Bioluminescent Aether Core & Dorsal Spines
+    for (let i = -3; i <= 3; i++) {
+      const spine = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.88, 6), accentMat);
+      spine.position.set(0, 0.95, i * 0.48);
+      spine.rotation.x = -0.38;
+      body.add(spine);
+      accentMeshes.push(spine);
+    }
+
+    // Sinuous Dragon Neck & Horned Draconic Head
+    head.position.set(0, 0.85, 2.15);
+    body.add(head);
+
+    const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.58, 1.35, 12), skinMat);
+    neckMesh.position.set(0, -0.32, -0.45);
+    neckMesh.rotation.x = 0.65;
+    head.add(neckMesh);
+
+    const snoutGeo = new THREE.ConeGeometry(0.56, 1.65, 10);
+    snoutGeo.rotateX(Math.PI / 2);
+    const snoutMesh = new THREE.Mesh(snoutGeo, skinMat);
+    snoutMesh.position.set(0, 0.12, 0.68);
+    head.add(snoutMesh);
+
+    jaw.position.set(0, -0.18, 0.35);
+    const jawGeo = new THREE.ConeGeometry(0.44, 1.35, 8);
+    jawGeo.rotateX(Math.PI / 2);
+    const jawMesh = new THREE.Mesh(jawGeo, bellyMat);
+    jawMesh.position.set(0, 0, 0.42);
+    jaw.add(jawMesh);
+    head.add(jaw);
+
+    addEyesAndTeeth(head, jaw, 0.36, 0.24, 0.4, 0.62, 1.2, 6);
+
+    // Swept Draconic Crown Horns
+    for (const side of [-1, 1]) {
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.16, 1.45, 8), mat.tribalGold);
+      horn.rotation.x = -Math.PI / 2.6;
+      horn.rotation.z = side * 0.28;
+      horn.position.set(side * 0.38, 0.56, -0.15);
+      head.add(horn);
+      accentMeshes.push(horn);
+    }
+
+    // Twin Colossal Articulated Dragon Wings (stored in legs[0] and legs[1] for wing-flap animation!)
+    for (const side of [-1, 1]) {
+      const wingGroup = new THREE.Group();
+      wingGroup.position.set(side * 0.72, 0.52, 0.45);
+
+      // Leading Wing Bone Spar
+      const bone1 = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.08, 3.6, 8), skinMat);
+      bone1.rotation.z = -side * (Math.PI / 2.15);
+      bone1.position.set(side * 1.75, 0.35, 0.2);
+      wingGroup.add(bone1);
+
+      // Wing Patagium Membranes (3-fingered bat/wyvern wing fan)
+      for (let f = 0; f < 3; f++) {
+        const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.02, 2.8 - f * 0.35, 6), mat.boneMaterial);
+        strut.rotation.z = -side * (Math.PI / 2.4);
+        strut.rotation.y = side * (0.25 + f * 0.26);
+        strut.position.set(side * (1.8 + f * 0.45), 0.15 - f * 0.12, -0.35 - f * 0.42);
+        wingGroup.add(strut);
+
+        const membrane = new THREE.Mesh(
+          new THREE.ConeGeometry(0.95, 3.1 - f * 0.3, 4),
+          f === 1 ? accentMat : skinMat
+        );
+        membrane.scale.set(1.0, 1.0, 0.14);
+        membrane.rotation.z = -side * (Math.PI / 2.2);
+        membrane.rotation.y = side * (0.18 + f * 0.2);
+        membrane.position.set(side * (1.65 + f * 0.55), 0.05 - f * 0.1, -0.45 - f * 0.4);
+        membrane.castShadow = true;
+        wingGroup.add(membrane);
+      }
+
+      body.add(wingGroup);
+      legs.push(wingGroup);
+    }
+
+    // Hind Talons
+    for (const side of [-1, 1]) {
+      const talonLeg = new THREE.Group();
+      talonLeg.position.set(side * 0.68, 1.75, -0.65);
+      const legMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.16, 1.45, 8), skinMat);
+      legMesh.position.set(0, -0.65, 0);
+      legMesh.rotation.x = 0.35;
+      talonLeg.add(legMesh);
+      root.add(talonLeg);
+      legs.push(talonLeg);
+    }
+
+    // Long Whip-Tail with Arrowhead Aether Fluke
+    tail.position.set(0, 0.05, -1.75);
+    body.add(tail);
+    const tailGeo = new THREE.ConeGeometry(0.52, 3.85, 10);
+    tailGeo.rotateX(-Math.PI / 2);
+    const tailMesh = new THREE.Mesh(tailGeo, skinMat);
+    tailMesh.position.set(0, 0, -1.85);
+    tail.add(tailMesh);
+
+    const fluke = new THREE.Mesh(new THREE.OctahedronGeometry(0.52, 0), accentMat);
+    fluke.scale.set(1.4, 0.25, 1.6);
+    fluke.position.set(0, 0, -3.7);
+    tail.add(fluke);
+    accentMeshes.push(fluke);
   } else {
     // CALDERA TITAN: Ignis-Rex Apex Volcanic Dragon-Theropod
     body.position.set(0, 2.85, 0);
@@ -886,6 +1180,52 @@ export function buildBeastModel(species: BeastSpecies, mat: MaterialCache): Beas
     accentMeshes,
     weakPointIndicators,
   };
+}
+
+/**
+ * Builds a 3D Creature / Dragon Egg Nest with woven timber/stone rim and glowing speckled Egg.
+ */
+export function buildEggNestModel(species: BeastSpecies, mat: MaterialCache): THREE.Group {
+  const group = new THREE.Group();
+
+  // Woven Nest Base Ring
+  const nestRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.85, 0.24, 8, 18),
+    species === 'sky_dragon' || species === 'caldera_titan' ? mat.obsidianMaterial : mat.woodMaterial
+  );
+  nestRing.rotation.x = Math.PI / 2;
+  nestRing.position.y = 0.18;
+  nestRing.castShadow = true;
+  group.add(nestRing);
+
+  // Surrounding Nest Stones / Twigs
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.24, 0), mat.stoneMaterial);
+    stone.position.set(Math.cos(a) * 0.95, 0.16, Math.sin(a) * 0.95);
+    group.add(stone);
+  }
+
+  // Primary Creature Egg (Ovoid Sphere) + Secondary Clutch Eggs
+  const eggMat = mat.beastAccent[species] || mat.tribalGold;
+  const mainEgg = new THREE.Mesh(new THREE.SphereGeometry(0.46, 16, 14), eggMat);
+  mainEgg.scale.set(0.85, 1.32, 0.85);
+  mainEgg.position.set(0, 0.58, 0);
+  mainEgg.name = 'creature_egg_mesh';
+  mainEgg.castShadow = true;
+  group.add(mainEgg);
+
+  for (const off of [
+    { x: 0.36, z: 0.25, s: 0.62 },
+    { x: -0.34, z: -0.22, s: 0.58 },
+  ]) {
+    const subEgg = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 12), mat.beastSkin[species] || mat.boneMaterial);
+    subEgg.scale.set(0.82 * off.s, 1.28 * off.s, 0.82 * off.s);
+    subEgg.position.set(off.x, 0.42, off.z);
+    group.add(subEgg);
+  }
+
+  return group;
 }
 
 /**
