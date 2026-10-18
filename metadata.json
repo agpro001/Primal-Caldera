@@ -1,0 +1,6 @@
+{
+  "name": "Primal Caldera: Prehistoric Beast Hunter",
+  "description": "Third-person prehistoric hunting & survival action game. Stalk colossal beasts, dodge telegraphed strikes, harvest materials, craft upgrades, and ascend the volcanic island to ignite the ancient signal tower.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
