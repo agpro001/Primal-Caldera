@@ -41,23 +41,39 @@ export function getInitialSaveData(): SaveData {
     currentQuestIndex: 0,
     signalTowerProgress: 0,
     beaconLit: false,
+    beastKnowledge: {
+      raptor: 'tracked',
+      brontoshell: 'tracked',
+      thunderhorn: 'tracked',
+      frostfang: 'tracked',
+      snapjaw: 'tracked',
+      caldera_titan: 'tracked',
+    },
     settings: { ...DEFAULT_SETTINGS },
   };
 }
 
 export function loadSavedGame(): SaveData {
+  const defaults = getInitialSaveData();
   try {
     const raw = localStorage.getItem(SAVE_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.version === 1) {
-        return parsed;
+        return {
+          ...defaults,
+          ...parsed,
+          beastKnowledge: {
+            ...defaults.beastKnowledge,
+            ...(parsed.beastKnowledge ?? {}),
+          },
+        };
       }
     }
   } catch {
     // Fall back to new game
   }
-  return getInitialSaveData();
+  return defaults;
 }
 
 export function saveGame(data: SaveData): boolean {

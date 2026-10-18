@@ -6,366 +6,547 @@
 import * as THREE from 'three';
 import type { BiomeType, BeastSpecies } from '../../types/game.ts';
 
-function createTileCanvas(width: number, height: number, draw: (ctx: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
+function createTileCanvas(
+  width: number,
+  height: number,
+  draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void
+): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d')!;
-  draw(ctx);
+  draw(ctx, width, height);
   const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
 
-export function generateBiomeTexture(biome: BiomeType): THREE.CanvasTexture {
-  return createTileCanvas(512, 512, (ctx) => {
-    if (biome === 'jungle') {
-      // Lush prehistoric moss and loam
-      ctx.fillStyle = '#22381e';
-      ctx.fillRect(0, 0, 512, 512);
-
-      // Noise and fern scatter
-      for (let i = 0; i < 1800; i++) {
-        const x = Math.random() * 512;
-        const y = Math.random() * 512;
-        const r = Math.random() * 3 + 1;
-        ctx.fillStyle = Math.random() > 0.4 ? '#33522a' : '#172714';
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // Fallen golden leaves & twigs
-      for (let i = 0; i < 120; i++) {
-        ctx.strokeStyle = Math.random() > 0.5 ? '#5d4e28' : '#3d3016';
-        ctx.lineWidth = Math.random() * 2 + 1;
-        ctx.beginPath();
-        const sx = Math.random() * 512;
-        const sy = Math.random() * 512;
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(sx + (Math.random() - 0.5) * 20, sy + (Math.random() - 0.5) * 20);
-        ctx.stroke();
-      }
-    } else if (biome === 'coast') {
-      // Black volcanic sand
-      ctx.fillStyle = '#18191c';
-      ctx.fillRect(0, 0, 512, 512);
-      for (let i = 0; i < 2400; i++) {
-        const x = Math.random() * 512;
-        const y = Math.random() * 512;
-        ctx.fillStyle = Math.random() > 0.7 ? '#2a2c33' : '#101114';
-        ctx.fillRect(x, y, 2, 2);
-      }
-      // Shiny obsidian mica specks
-      for (let i = 0; i < 150; i++) {
-        ctx.fillStyle = '#4c5264';
-        ctx.fillRect(Math.random() * 512, Math.random() * 512, 3, 3);
-      }
-    } else if (biome === 'springs') {
-      // Sulfur geothermal mineral crust
-      ctx.fillStyle = '#4a442e';
-      ctx.fillRect(0, 0, 512, 512);
-      // Bright sulfur bands
-      for (let i = 0; i < 30; i++) {
-        const grad = ctx.createRadialGradient(
-          Math.random() * 512, Math.random() * 512, 5,
-          Math.random() * 512, Math.random() * 512, 70
-        );
-        grad.addColorStop(0, '#a3973c');
-        grad.addColorStop(0.5, '#6b6630');
-        grad.addColorStop(1, 'transparent');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, 512, 512);
-      }
-    } else if (biome === 'lava') {
-      // Dark basalt crust with glowing magma fissures
-      ctx.fillStyle = '#1c1716';
-      ctx.fillRect(0, 0, 512, 512);
-      for (let i = 0; i < 15; i++) {
-        ctx.strokeStyle = '#e65100';
-        ctx.lineWidth = Math.random() * 4 + 2;
-        ctx.beginPath();
-        let px = Math.random() * 512;
-        let py = Math.random() * 512;
-        ctx.moveTo(px, py);
-        for (let j = 0; j < 6; j++) {
-          px += (Math.random() - 0.5) * 80;
-          py += (Math.random() - 0.5) * 80;
-          ctx.lineTo(px, py);
-        }
-        ctx.stroke();
-      }
-      // Hot center veins
-      ctx.strokeStyle = '#ffb300';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    } else {
-      // Caldera summit: high ash and pumice stone
-      ctx.fillStyle = '#222328';
-      ctx.fillRect(0, 0, 512, 512);
-      for (let i = 0; i < 1200; i++) {
-        ctx.fillStyle = Math.random() > 0.5 ? '#363842' : '#141518';
-        ctx.beginPath();
-        ctx.arc(Math.random() * 512, Math.random() * 512, Math.random() * 4 + 1, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  });
-}
-
-export function generateMagmaFlowTexture(): THREE.CanvasTexture {
-  return createTileCanvas(256, 256, (ctx) => {
-    const grad = ctx.createLinearGradient(0, 0, 256, 256);
-    grad.addColorStop(0, '#bf2600');
-    grad.addColorStop(0.3, '#ff5722');
-    grad.addColorStop(0.7, '#ffab00');
-    grad.addColorStop(1, '#ff3d00');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 256, 256);
-
-    ctx.fillStyle = '#ffea00';
-    for (let i = 0; i < 40; i++) {
-      ctx.beginPath();
-      ctx.arc(Math.random() * 256, Math.random() * 256, Math.random() * 12 + 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  });
-}
-
-export function generateBeastTexture(species: BeastSpecies): THREE.CanvasTexture {
-  return createTileCanvas(256, 256, (ctx) => {
-    if (species === 'raptor') {
-      // Striped predatory reptile skin
-      ctx.fillStyle = '#3a5f38';
-      ctx.fillRect(0, 0, 256, 256);
-      ctx.fillStyle = '#1f381e';
-      for (let i = 0; i < 12; i++) {
-        ctx.beginPath();
-        ctx.moveTo(0, i * 22);
-        ctx.lineTo(256, i * 22 + 10);
-        ctx.lineTo(256, i * 22 + 20);
-        ctx.lineTo(0, i * 22 + 8);
-        ctx.fill();
-      }
-      // Feather spots
-      ctx.fillStyle = '#d35400';
-      for (let i = 0; i < 60; i++) {
-        ctx.fillRect(Math.random() * 256, Math.random() * 256, 4, 6);
-      }
-    } else if (species === 'brontoshell') {
-      // Rugged volcanic stone plates
-      ctx.fillStyle = '#2c2d33';
-      ctx.fillRect(0, 0, 256, 256);
-      ctx.strokeStyle = '#4a4b54';
-      ctx.lineWidth = 3;
-      for (let x = 0; x < 256; x += 32) {
-        for (let y = 0; y < 256; y += 32) {
-          ctx.strokeRect(x, y, 30, 30);
-        }
-      }
-    } else if (species === 'thunderhorn') {
-      // Weathered leathery gray with electric teal streaks
-      ctx.fillStyle = '#41474d';
-      ctx.fillRect(0, 0, 256, 256);
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2;
-      for (let i = 0; i < 8; i++) {
-        ctx.beginPath();
-        let x = Math.random() * 256;
-        let y = 0;
-        ctx.moveTo(x, y);
-        while (y < 256) {
-          x += (Math.random() - 0.5) * 30;
-          y += 25;
-          ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-      }
-    } else {
-      // Caldera Titan: Black igneous scales with fiery veins
-      ctx.fillStyle = '#161314';
-      ctx.fillRect(0, 0, 256, 256);
-      ctx.strokeStyle = '#ef4444';
-      ctx.lineWidth = 3;
-      for (let i = 0; i < 18; i++) {
-        ctx.beginPath();
-        ctx.arc(Math.random() * 256, Math.random() * 256, Math.random() * 24 + 8, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    }
-  });
-}
-
-export function generateHunterTexture(): THREE.CanvasTexture {
-  return createTileCanvas(256, 256, (ctx) => {
-    // Tanned skin with tribal ochre tattoos
-    ctx.fillStyle = '#9e6749';
-    ctx.fillRect(0, 0, 256, 256);
-
-    // Ochre red tribal war markings
-    ctx.fillStyle = '#b91c1c';
-    for (let i = 0; i < 6; i++) {
-      ctx.beginPath();
-      ctx.arc(60 + i * 28, 70, 8, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.strokeStyle = '#b91c1c';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(20, 140);
-    ctx.lineTo(236, 140);
-    ctx.moveTo(20, 160);
-    ctx.lineTo(236, 160);
-    ctx.stroke();
-  });
-}
-
 export class MaterialCache {
-  public groundMaterials: Record<BiomeType, THREE.MeshStandardMaterial>;
-  public beastMaterials: Record<BeastSpecies, THREE.MeshStandardMaterial>;
-  public beastEnragedMaterials: Record<BeastSpecies, THREE.MeshStandardMaterial>;
-  public hunterMaterial: THREE.MeshStandardMaterial;
-  public hunterArmorMaterials: Record<string, THREE.MeshStandardMaterial>;
-  public lavaMaterial: THREE.MeshStandardMaterial;
+  public biomeGround: Record<BiomeType, THREE.MeshStandardMaterial>;
+  public beastSkin: Record<BeastSpecies, THREE.MeshStandardMaterial>;
+  public beastUnderbelly: Record<BeastSpecies, THREE.MeshStandardMaterial>;
+  public beastAccent: Record<BeastSpecies, THREE.MeshStandardMaterial>;
+  public beastEnrageAccent: THREE.MeshStandardMaterial;
+  public weakPointGlow: THREE.MeshStandardMaterial;
+  public focusClueGlow: THREE.MeshStandardMaterial;
+  public hunterSkin: THREE.MeshStandardMaterial;
+  public hunterHair: THREE.MeshStandardMaterial;
+  public woodMaterial: THREE.MeshStandardMaterial;
+  public stoneMaterial: THREE.MeshStandardMaterial;
+  public riverStoneMaterial: THREE.MeshStandardMaterial;
+  public snowMaterial: THREE.MeshStandardMaterial;
+  public glacierIceMaterial: THREE.MeshStandardMaterial;
   public obsidianMaterial: THREE.MeshStandardMaterial;
   public boneMaterial: THREE.MeshStandardMaterial;
-  public woodMaterial: THREE.MeshStandardMaterial;
-  public leafMaterial: THREE.MeshStandardMaterial;
-  public stoneMaterial: THREE.MeshStandardMaterial;
+  public foliageGreen: THREE.MeshStandardMaterial;
+  public foliageDarkGreen: THREE.MeshStandardMaterial;
+  public pineSnowGreen: THREE.MeshStandardMaterial;
+  public shrubLeafMaterial: THREE.MeshStandardMaterial;
+  public grassBladeMaterial: THREE.MeshStandardMaterial;
+  public lavaMaterial: THREE.MeshStandardMaterial;
+  public waterMaterial: THREE.MeshStandardMaterial;
+  public oceanMaterial: THREE.MeshStandardMaterial;
+  public fishScaleMaterial: THREE.MeshStandardMaterial;
+  public tribalClothRed: THREE.MeshStandardMaterial;
+  public tribalClothBlue: THREE.MeshStandardMaterial;
+  public tribalGold: THREE.MeshStandardMaterial;
 
   constructor() {
-    this.groundMaterials = {
+    // 1. Biome Ground Textures
+    this.biomeGround = {
       jungle: new THREE.MeshStandardMaterial({
-        map: generateBiomeTexture('jungle'),
-        roughness: 0.85,
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#2d4c2b';
+          ctx.fillRect(0, 0, w, h);
+          for (let i = 0; i < 180; i++) {
+            ctx.fillStyle = i % 2 === 0 ? '#243e22' : '#385d34';
+            ctx.fillRect((i * 37) % w, (i * 53) % h, 8, 8);
+          }
+        }),
+        roughness: 0.88,
         metalness: 0.05,
       }),
       coast: new THREE.MeshStandardMaterial({
-        map: generateBiomeTexture('coast'),
-        roughness: 0.7,
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#2a2d34';
+          ctx.fillRect(0, 0, w, h);
+          for (let i = 0; i < 160; i++) {
+            ctx.fillStyle = i % 3 === 0 ? '#3b4252' : '#1f232a';
+            ctx.fillRect((i * 29) % w, (i * 43) % h, 6, 6);
+          }
+        }),
+        roughness: 0.75,
         metalness: 0.15,
       }),
       springs: new THREE.MeshStandardMaterial({
-        map: generateBiomeTexture('springs'),
-        roughness: 0.6,
-        metalness: 0.1,
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#5c5336';
+          ctx.fillRect(0, 0, w, h);
+          for (let i = 0; i < 140; i++) {
+            ctx.fillStyle = i % 2 === 0 ? '#786b40' : '#38bdf8';
+            ctx.fillRect((i * 41) % w, (i * 61) % h, 7, 7);
+          }
+        }),
+        roughness: 0.65,
+        metalness: 0.2,
       }),
       lava: new THREE.MeshStandardMaterial({
-        map: generateBiomeTexture('lava'),
-        roughness: 0.5,
-        metalness: 0.2,
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#1c1917';
+          ctx.fillRect(0, 0, w, h);
+          ctx.strokeStyle = '#ea580c';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(0, 32);
+          ctx.lineTo(64, 64);
+          ctx.lineTo(128, 48);
+          ctx.stroke();
+        }),
+        roughness: 0.8,
+        metalness: 0.25,
       }),
       caldera: new THREE.MeshStandardMaterial({
-        map: generateBiomeTexture('caldera'),
-        roughness: 0.8,
-        metalness: 0.1,
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#181211';
+          ctx.fillRect(0, 0, w, h);
+          for (let i = 0; i < 90; i++) {
+            ctx.fillStyle = i % 4 === 0 ? '#f97316' : '#292524';
+            ctx.fillRect((i * 31) % w, (i * 47) % h, 6, 6);
+          }
+        }),
+        roughness: 0.78,
+        metalness: 0.3,
       }),
-    };
-
-    // Configure repeat
-    Object.values(this.groundMaterials).forEach((mat) => {
-      if (mat.map) {
-        mat.map.repeat.set(16, 16);
-      }
-    });
-
-    this.beastMaterials = {
-      raptor: new THREE.MeshStandardMaterial({
-        map: generateBeastTexture('raptor'),
-        roughness: 0.65,
-        metalness: 0.1,
+      snow: new THREE.MeshStandardMaterial({
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#e2e8f0';
+          ctx.fillRect(0, 0, w, h);
+          for (let i = 0; i < 180; i++) {
+            ctx.fillStyle = i % 3 === 0 ? '#f8fafc' : '#cbd5e1';
+            ctx.fillRect((i * 23) % w, (i * 41) % h, 8, 8);
+          }
+        }),
+        roughness: 0.55,
+        metalness: 0.12,
       }),
-      brontoshell: new THREE.MeshStandardMaterial({
-        map: generateBeastTexture('brontoshell'),
-        roughness: 0.85,
-        metalness: 0.15,
-      }),
-      thunderhorn: new THREE.MeshStandardMaterial({
-        map: generateBeastTexture('thunderhorn'),
-        roughness: 0.7,
+      river: new THREE.MeshStandardMaterial({
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#334155';
+          ctx.fillRect(0, 0, w, h);
+          for (let i = 0; i < 160; i++) {
+            ctx.fillStyle = i % 2 === 0 ? '#475569' : '#0f766e';
+            ctx.beginPath();
+            ctx.arc((i * 37) % w, (i * 53) % h, 5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }),
+        roughness: 0.45,
         metalness: 0.2,
       }),
-      caldera_titan: new THREE.MeshStandardMaterial({
-        map: generateBeastTexture('caldera_titan'),
-        roughness: 0.45,
+      ocean: new THREE.MeshStandardMaterial({
+        color: 0x0369a1,
+        roughness: 0.25,
         metalness: 0.35,
       }),
     };
 
-    this.beastEnragedMaterials = {
+    // 2. Beast Scales & Fur Skins (All 6 Species)
+    this.beastSkin = {
       raptor: new THREE.MeshStandardMaterial({
-        color: 0xff3b30,
-        emissive: 0xaa1100,
-        emissiveIntensity: 0.55,
-        roughness: 0.5,
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#2e5339';
+          ctx.fillRect(0, 0, w, h);
+          ctx.fillStyle = '#1b3524';
+          for (let y = 0; y < h; y += 16) {
+            ctx.fillRect(0, y, w, 6);
+          }
+          ctx.fillStyle = '#d97706';
+          for (let i = 0; i < 60; i++) {
+            ctx.fillRect((i * 19) % w, (i * 31) % h, 4, 4);
+          }
+        }),
+        roughness: 0.55,
+        metalness: 0.12,
       }),
       brontoshell: new THREE.MeshStandardMaterial({
-        color: 0xff4500,
-        emissive: 0x992200,
-        emissiveIntensity: 0.6,
-        roughness: 0.6,
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#1e3a5f';
+          ctx.fillRect(0, 0, w, h);
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2;
+          for (let x = 0; x < w; x += 24) {
+            for (let y = 0; y < h; y += 24) {
+              ctx.strokeRect(x + 2, y + 2, 20, 20);
+            }
+          }
+        }),
+        roughness: 0.42,
+        metalness: 0.35,
       }),
       thunderhorn: new THREE.MeshStandardMaterial({
-        color: 0x38bdf8,
-        emissive: 0x0284c7,
-        emissiveIntensity: 0.7,
-        roughness: 0.4,
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#4b3f35';
+          ctx.fillRect(0, 0, w, h);
+          ctx.fillStyle = '#ca8a04';
+          for (let y = 0; y < h; y += 20) {
+            ctx.fillRect(0, y, w, 4);
+          }
+        }),
+        roughness: 0.5,
+        metalness: 0.25,
+      }),
+      frostfang: new THREE.MeshStandardMaterial({
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#cbd5e1';
+          ctx.fillRect(0, 0, w, h);
+          ctx.fillStyle = '#94a3b8';
+          for (let x = 0; x < w; x += 8) {
+            ctx.fillRect(x, 0, 3, h);
+          }
+          ctx.fillStyle = '#f8fafc';
+          for (let i = 0; i < 90; i++) {
+            ctx.fillRect((i * 17) % w, (i * 29) % h, 3, 12);
+          }
+        }),
+        roughness: 0.72,
+        metalness: 0.08,
+      }),
+      snapjaw: new THREE.MeshStandardMaterial({
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#0f5257';
+          ctx.fillRect(0, 0, w, h);
+          ctx.fillStyle = '#0b3c49';
+          for (let x = 0; x < w; x += 16) {
+            for (let y = 0; y < h; y += 16) {
+              ctx.fillRect(x + 2, y + 2, 12, 12);
+            }
+          }
+          ctx.fillStyle = '#22d3ee';
+          for (let i = 0; i < 45; i++) {
+            ctx.fillRect((i * 23) % w, (i * 37) % h, 4, 4);
+          }
+        }),
+        roughness: 0.35,
+        metalness: 0.28,
       }),
       caldera_titan: new THREE.MeshStandardMaterial({
-        color: 0xff2200,
-        emissive: 0xff4400,
-        emissiveIntensity: 0.85,
-        roughness: 0.3,
+        map: createTileCanvas(128, 128, (ctx, w, h) => {
+          ctx.fillStyle = '#18181b';
+          ctx.fillRect(0, 0, w, h);
+          ctx.strokeStyle = '#f97316';
+          ctx.lineWidth = 3;
+          for (let y = 0; y < h; y += 24) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(w / 2, y + 10);
+            ctx.lineTo(w, y);
+            ctx.stroke();
+          }
+        }),
+        emissive: new THREE.Color(0x7c2d12),
+        emissiveIntensity: 0.45,
+        roughness: 0.4,
+        metalness: 0.45,
       }),
     };
 
-    this.hunterMaterial = new THREE.MeshStandardMaterial({
-      map: generateHunterTexture(),
-      roughness: 0.75,
-      metalness: 0.05,
-    });
-
-    this.hunterArmorMaterials = {
-      scavenger_rags: new THREE.MeshStandardMaterial({ color: 0x5c4a38, roughness: 0.9 }),
-      beast_hide: new THREE.MeshStandardMaterial({ color: 0x33442a, roughness: 0.7 }),
-      chitin_cuirass: new THREE.MeshStandardMaterial({ color: 0x3b3d45, roughness: 0.5, metalness: 0.25 }),
-      caldera_plate: new THREE.MeshStandardMaterial({ color: 0x241818, emissive: 0x4a1100, roughness: 0.35, metalness: 0.6 }),
+    this.beastUnderbelly = {
+      raptor: new THREE.MeshStandardMaterial({ color: 0xa39274, roughness: 0.7 }),
+      brontoshell: new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.65 }),
+      thunderhorn: new THREE.MeshStandardMaterial({ color: 0x78716c, roughness: 0.65 }),
+      frostfang: new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.75 }),
+      snapjaw: new THREE.MeshStandardMaterial({ color: 0x99f6e4, roughness: 0.5 }),
+      caldera_titan: new THREE.MeshStandardMaterial({
+        color: 0x431407,
+        emissive: 0x9a3412,
+        emissiveIntensity: 0.35,
+        roughness: 0.5,
+      }),
     };
 
-    this.lavaMaterial = new THREE.MeshStandardMaterial({
-      map: generateMagmaFlowTexture(),
+    this.beastAccent = {
+      raptor: new THREE.MeshStandardMaterial({
+        color: 0xef4444,
+        emissive: 0x991b1b,
+        emissiveIntensity: 0.35,
+        roughness: 0.4,
+      }),
+      brontoshell: new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.35,
+        roughness: 0.35,
+      }),
+      thunderhorn: new THREE.MeshStandardMaterial({
+        color: 0xfacc15,
+        emissive: 0xca8a04,
+        emissiveIntensity: 0.45,
+        roughness: 0.3,
+      }),
+      frostfang: new THREE.MeshStandardMaterial({
+        color: 0x7dd3fc,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.45,
+        roughness: 0.22,
+        metalness: 0.35,
+      }),
+      snapjaw: new THREE.MeshStandardMaterial({
+        color: 0x22d3ee,
+        emissive: 0x0891b2,
+        emissiveIntensity: 0.5,
+        roughness: 0.25,
+      }),
+      caldera_titan: new THREE.MeshStandardMaterial({
+        color: 0xf97316,
+        emissive: 0xea580c,
+        emissiveIntensity: 0.85,
+        roughness: 0.25,
+      }),
+    };
+
+    this.beastEnrageAccent = new THREE.MeshStandardMaterial({
+      color: 0xffedd5,
       emissive: 0xff4500,
-      emissiveIntensity: 0.75,
-      roughness: 0.3,
+      emissiveIntensity: 1.5,
+      roughness: 0.2,
     });
 
-    this.obsidianMaterial = new THREE.MeshStandardMaterial({
-      color: 0x111317,
-      roughness: 0.15,
-      metalness: 0.8,
+    this.weakPointGlow = new THREE.MeshStandardMaterial({
+      color: 0xfbbf24,
+      emissive: 0xf59e0b,
+      emissiveIntensity: 1.1,
+      roughness: 0.25,
+      transparent: true,
+      opacity: 0.88,
     });
 
-    this.boneMaterial = new THREE.MeshStandardMaterial({
-      color: 0xe6dfd1,
-      roughness: 0.6,
+    this.focusClueGlow = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0ea5e9,
+      emissiveIntensity: 1.3,
+      roughness: 0.2,
+    });
+
+    this.hunterSkin = new THREE.MeshStandardMaterial({
+      color: 0xc6865c,
+      roughness: 0.62,
       metalness: 0.05,
+    });
+
+    this.hunterHair = new THREE.MeshStandardMaterial({
+      color: 0x1c1917,
+      roughness: 0.78,
     });
 
     this.woodMaterial = new THREE.MeshStandardMaterial({
-      color: 0x453120,
-      roughness: 0.85,
-    });
-
-    this.leafMaterial = new THREE.MeshStandardMaterial({
-      color: 0x2e5e29,
-      roughness: 0.7,
-      side: THREE.DoubleSide,
+      map: createTileCanvas(64, 64, (ctx, w, h) => {
+        ctx.fillStyle = '#5c3a21';
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = '#472b16';
+        for (let x = 0; x < w; x += 8) {
+          ctx.fillRect(x, 0, 3, h);
+        }
+      }),
+      roughness: 0.82,
     });
 
     this.stoneMaterial = new THREE.MeshStandardMaterial({
-      color: 0x5a5e66,
-      roughness: 0.8,
+      map: createTileCanvas(64, 64, (ctx, w, h) => {
+        ctx.fillStyle = '#57534e';
+        ctx.fillRect(0, 0, w, h);
+        for (let i = 0; i < 45; i++) {
+          ctx.fillStyle = i % 2 === 0 ? '#44403c' : '#78716c';
+          ctx.fillRect((i * 19) % w, (i * 29) % h, 8, 8);
+        }
+      }),
+      roughness: 0.85,
+      metalness: 0.1,
     });
+
+    this.riverStoneMaterial = new THREE.MeshStandardMaterial({
+      map: createTileCanvas(64, 64, (ctx, w, h) => {
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(0, 0, w, h);
+        for (let i = 0; i < 40; i++) {
+          ctx.fillStyle = i % 2 === 0 ? '#64748b' : '#334155';
+          ctx.beginPath();
+          ctx.arc((i * 17) % w, (i * 23) % h, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }),
+      roughness: 0.32,
+      metalness: 0.22,
+    });
+
+    this.snowMaterial = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      emissive: 0xbae6fd,
+      emissiveIntensity: 0.12,
+      roughness: 0.5,
+      metalness: 0.08,
+    });
+
+    this.glacierIceMaterial = new THREE.MeshStandardMaterial({
+      color: 0x7dd3fc,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.35,
+      roughness: 0.15,
+      metalness: 0.45,
+      transparent: true,
+      opacity: 0.86,
+    });
+
+    this.obsidianMaterial = new THREE.MeshStandardMaterial({
+      color: 0x18181b,
+      roughness: 0.18,
+      metalness: 0.82,
+    });
+
+    this.boneMaterial = new THREE.MeshStandardMaterial({
+      color: 0xf5f5f4,
+      roughness: 0.45,
+      metalness: 0.08,
+    });
+
+    this.foliageGreen = new THREE.MeshStandardMaterial({
+      color: 0x3b7a36,
+      roughness: 0.72,
+      flatShading: true,
+    });
+
+    this.foliageDarkGreen = new THREE.MeshStandardMaterial({
+      color: 0x1e4d24,
+      roughness: 0.76,
+      flatShading: true,
+    });
+
+    this.pineSnowGreen = new THREE.MeshStandardMaterial({
+      color: 0x1f4e3d,
+      roughness: 0.7,
+      flatShading: true,
+    });
+
+    this.shrubLeafMaterial = new THREE.MeshStandardMaterial({
+      color: 0x4d8c3a,
+      roughness: 0.68,
+      flatShading: true,
+    });
+
+    this.grassBladeMaterial = new THREE.MeshStandardMaterial({
+      color: 0x5da13c,
+      roughness: 0.65,
+      side: THREE.DoubleSide,
+    });
+
+    this.lavaMaterial = new THREE.MeshStandardMaterial({
+      color: 0xf97316,
+      emissive: 0xea580c,
+      emissiveIntensity: 1.3,
+      roughness: 0.25,
+    });
+
+    this.waterMaterial = new THREE.MeshStandardMaterial({
+      map: createTileCanvas(128, 128, (ctx, w, h) => {
+        ctx.fillStyle = '#0ea5e9';
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = '#7dd3fc';
+        ctx.lineWidth = 2;
+        for (let y = 8; y < h; y += 16) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.quadraticCurveTo(w * 0.25, y - 5, w * 0.5, y);
+          ctx.quadraticCurveTo(w * 0.75, y + 5, w, y);
+          ctx.stroke();
+        }
+      }),
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.22,
+      roughness: 0.14,
+      metalness: 0.35,
+      transparent: true,
+      opacity: 0.84,
+    });
+
+    this.oceanMaterial = new THREE.MeshStandardMaterial({
+      map: createTileCanvas(128, 128, (ctx, w, h) => {
+        ctx.fillStyle = '#0369a1';
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        for (let y = 12; y < h; y += 24) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.quadraticCurveTo(w * 0.5, y - 6, w, y);
+          ctx.stroke();
+        }
+      }),
+      color: 0x0284c7,
+      emissive: 0x075985,
+      emissiveIntensity: 0.2,
+      roughness: 0.18,
+      metalness: 0.42,
+      transparent: true,
+      opacity: 0.9,
+    });
+
+    this.fishScaleMaterial = new THREE.MeshStandardMaterial({
+      color: 0x2dd4bf,
+      emissive: 0x0d9488,
+      emissiveIntensity: 0.3,
+      roughness: 0.25,
+      metalness: 0.5,
+    });
+
+    this.tribalClothRed = new THREE.MeshStandardMaterial({
+      color: 0xb91c1c,
+      roughness: 0.65,
+    });
+
+    this.tribalClothBlue = new THREE.MeshStandardMaterial({
+      color: 0x0369a1,
+      roughness: 0.65,
+    });
+
+    this.tribalGold = new THREE.MeshStandardMaterial({
+      color: 0xf59e0b,
+      emissive: 0xb45309,
+      emissiveIntensity: 0.25,
+      roughness: 0.3,
+      metalness: 0.65,
+    });
+  }
+
+  public dispose(): void {
+    Object.values(this.biomeGround).forEach((m) => m.dispose());
+    Object.values(this.beastSkin).forEach((m) => m.dispose());
+    Object.values(this.beastUnderbelly).forEach((m) => m.dispose());
+    Object.values(this.beastAccent).forEach((m) => m.dispose());
+    this.beastEnrageAccent.dispose();
+    this.weakPointGlow.dispose();
+    this.focusClueGlow.dispose();
+    this.hunterSkin.dispose();
+    this.hunterHair.dispose();
+    this.woodMaterial.dispose();
+    this.stoneMaterial.dispose();
+    this.riverStoneMaterial.dispose();
+    this.snowMaterial.dispose();
+    this.glacierIceMaterial.dispose();
+    this.obsidianMaterial.dispose();
+    this.boneMaterial.dispose();
+    this.foliageGreen.dispose();
+    this.foliageDarkGreen.dispose();
+    this.pineSnowGreen.dispose();
+    this.shrubLeafMaterial.dispose();
+    this.grassBladeMaterial.dispose();
+    this.lavaMaterial.dispose();
+    this.waterMaterial.dispose();
+    this.oceanMaterial.dispose();
+    this.fishScaleMaterial.dispose();
+    this.tribalClothRed.dispose();
+    this.tribalClothBlue.dispose();
+    this.tribalGold.dispose();
   }
 }

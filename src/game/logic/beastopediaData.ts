@@ -3,256 +3,404 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { BeastSpecies, BeastopediaEntry } from '../../types/game.ts';
+import type { BeastSpecies, BeastopediaEntry, NPCId } from '../../types/game.ts';
+
+export type EnvironmentModelId =
+  | 'snow_mountain'
+  | 'river_ocean'
+  | 'trees_canopy'
+  | 'stones_boulders'
+  | 'grass_shrubs'
+  | 'river_fish';
+
+export interface CharacterAtlasEntry {
+  id: NPCId | 'hunter_koa';
+  name: string;
+  role: string;
+  biomeName: string;
+  weaponOrTool: string;
+  lore: string;
+  traits: string[];
+}
+
+export interface EnvironmentAtlasEntry {
+  id: EnvironmentModelId;
+  name: string;
+  category: string;
+  biomeName: string;
+  description: string;
+  features: string[];
+}
+
+export const CHARACTER_ATLAS_ENTRIES: CharacterAtlasEntry[] = [
+  {
+    id: 'hunter_koa',
+    name: 'Koa the Apex Tracker (You)',
+    role: 'Lead Island Beast Hunter',
+    biomeName: 'All Island Biomes',
+    weaponOrTool: 'Flint Spear, Raptor Harpoon, Siege Lance & Caldera Glaive',
+    lore: 'Trained to read every footprint, broken fern, and telegraphed roar across the island. Koa wears articulated tribal shoulder pauldrons, war-painted war bands, and customizable prehistoric armor.',
+    traits: [
+      '360° Camera-Relative Movement with Calibrated Front/Back/Left/Right Joystick',
+      'Invulnerability-Frame Dodge Roll & Heavy Charged Spear Thrusts',
+      'Hunter Focus Vision (F) revealing glowing beast trails & anatomical weak points',
+    ],
+  },
+  {
+    id: 'chief_kael',
+    name: 'Elder Chief Kael',
+    role: 'Tribal Chieftain & Lorekeeper',
+    biomeName: 'Campfire Haven (Southern Valley)',
+    weaponOrTool: 'Carved Mammoth-Ivory Totem Staff & Feathered Headdress',
+    lore: 'Keeper of the island’s oral history and ancestral maps. Chief Kael guides hunters at the central Campfire Haven, marking the paths toward the Cold Snow Mountains, Crystal River, and Caldera Summit.',
+    traits: [
+      'Wears ceremonial crimson-and-gold feathered crown and bone chestplate',
+      'Provides hunting counsel and gifts Beast Bones when spoken to with [E]',
+      'Oversees the restoration of the Ancient Signal Tower',
+    ],
+  },
+  {
+    id: 'smith_torak',
+    name: 'Forge-Master Torak',
+    role: 'Obsidian & Bone Weaponsmith',
+    biomeName: 'Campfire Haven Workbench',
+    weaponOrTool: 'Heavy Basalt Anvil Hammer & Heat-Resistant Bronto Apron',
+    lore: 'A muscular tribal artisan who tempers volcanic obsidian, coastal carapace plates, and glacial ivory over the roaring camp forge.',
+    traits: [
+      'Wields a massive basalt forge hammer with glowing ember runes',
+      'Gifts Obsidian Shards to aid your weapon upgrades when greeted with [E]',
+      'Assists with crafting Tier 2–4 spears, lances, and armor sets',
+    ],
+  },
+  {
+    id: 'scout_lyra',
+    name: 'Scout Lyra',
+    role: 'River Pathfinder & Alpine Ranger',
+    biomeName: 'Crystal River Crossing & Alpine Foothills',
+    weaponOrTool: 'Recurve Bone Bow, Quiver & Camouflage Fern Cloak',
+    lore: 'Stationed near the Crystal River bridge, Lyra monitors the amphibious River Snapjaw Leviathan and tracks the Frostfang Mammoth across the eastern snow peaks.',
+    traits: [
+      'Equipped with a feathered camouflage cloak and river-reed quiver',
+      'Shares tactical intelligence on river and snow-mountain beasts [E]',
+      'Gifts restorative Sun-Herbs harvested from the riverbank',
+    ],
+  },
+];
+
+export const ENVIRONMENT_ATLAS_ENTRIES: EnvironmentAtlasEntry[] = [
+  {
+    id: 'snow_mountain',
+    name: 'Cold Snow Mountains & Glacial Peaks',
+    category: 'Alpine Biome & Elevation Landform',
+    biomeName: 'Eastern Glacial Range',
+    description: 'Towering jagged granite mountains crowned with deep snow caps, translucent blue glacial ice spires, snow-dusted pine trees, and drifting frost mist.',
+    features: [
+      'Multi-peak 3D mountain geometry with steep rocky crags and snow-capped ridges',
+      'Translucent turquoise-blue glacial ice crystals and frozen boulders',
+      'Home to the colossal Frostfang Glacial Mammoth',
+    ],
+  },
+  {
+    id: 'river_ocean',
+    name: 'Winding Crystal River & Surrounding Ocean',
+    category: 'Hydrology, Riverbank & Marine Ecosystem',
+    biomeName: 'Central River Valley & Island Perimeter Ocean',
+    description: 'A sparkling turquoise river fed by alpine snowmelt that winds across the island under a wooden tribal bridge and empties into the vast surrounding 3D ocean.',
+    features: [
+      'Animated 3D river currents, shoreline foam, and deep ocean swells',
+      'Lined with smooth wet river stones, reeds, and a timber suspension bridge',
+      'Patrolled by the River Snapjaw Leviathan and schools of swimming 3D fish',
+    ],
+  },
+  {
+    id: 'trees_canopy',
+    name: 'Prehistoric Trees (Jungle Banyan, Alpine Pine & Coastal Palm)',
+    category: '3D Flora & Forest Canopy',
+    biomeName: 'Jungle, Snow Mountains & Black Sand Coast',
+    description: 'Detailed multi-tiered 3D trees including buttress-rooted jungle banyans, snow-capped alpine conifers, and curved coastal coconut palms.',
+    features: [
+      'Flared root buttresses, textured bark trunks, and layered 3D leaf crowns',
+      'Snow-dusted needle tiers on high-altitude mountain pines',
+      'Curved palm trunks with radiating fronds and coconuts along the ocean shore',
+    ],
+  },
+  {
+    id: 'stones_boulders',
+    name: 'Mountain Boulders, River Stones & Volcanic Crags',
+    category: '3D Geology & Rock Formations',
+    biomeName: 'All Biomes',
+    description: 'Faceted granite boulders, smooth water-worn river cobbles, mossy jungle rocks, snow-capped alpine stones, and glowing obsidian spires.',
+    features: [
+      'Multi-rock clusters with moss caps, snow patches, or wet river sheen',
+      'Natural collision and cover landmarks across the 420m x 420m island',
+      'Glowing geothermal crystal seams and volcanic basalt columns',
+    ],
+  },
+  {
+    id: 'grass_shrubs',
+    name: 'Lush Grass Tufts, Berry Shrubs & Prehistoric Ferns',
+    category: '3D Groundcover & Undergrowth',
+    biomeName: 'Jungle Valley, Riverbanks & Foothills',
+    description: 'Dense 3D ground vegetation featuring multi-blade swaying grass tufts, flowering berry shrubs, river reeds, and unfurling prehistoric fern fronds.',
+    features: [
+      'Clustered 3D grass blades with varied heights and natural green-gold hues',
+      'Rounded woody shrubs dotted with vibrant red and amber prehistoric berries',
+      'Rosette fern fronds and tall riverbank cattail reeds',
+    ],
+  },
+  {
+    id: 'river_fish',
+    name: 'Prehistoric Armored River & Ocean Fish',
+    category: 'Aquatic Wildlife',
+    biomeName: 'Crystal River & Coastal Ocean Shallows',
+    description: 'Schools of iridescent prehistoric fish with dorsal sails, pectoral fins, and articulated tail flukes swimming along the river channel and coastal bay.',
+    features: [
+      'Streamlined 3D body with metallic turquoise scales and orange fins',
+      'Real-time swimming undulation and schooling trajectories in the water',
+      'Brings the river and ocean ecosystems to life',
+    ],
+  },
+];
 
 export const BEASTOPEDIA_ENTRIES: Record<BeastSpecies, BeastopediaEntry> = {
   raptor: {
     species: 'raptor',
     name: 'Razor-Crest Raptor Alpha',
     title: 'Pack Terror of the Ravines',
-    threatLevel: 'Moderate',
-    habitat: 'Jungle Ravines & Dense Cycad Groves',
+    biomeName: 'Emerald Cycad Jungle',
+    threatLevel: 2,
     diet: 'Carnivorous Pack Predator',
-    lore: 'The apex sprinter of the island lowlands. Raptor Alphas coordinate swift flank attacks with terrifying intelligence. Their iridescent feathered crests flush bright crimson to signal coordinated pack lunges. Their sickle claws are sharp enough to slice through prehistoric hardwood.',
+    sizeLabel: '6.8m Length · 2.6m Height',
+    lore: 'The apex sprinter of the island lowlands. Raptor Alphas coordinate swift flank attacks with terrifying intelligence. Their iridescent crimson-and-gold feathered crests flush bright scarlet to signal pack lunges, while their curved sickle talons can slice through hardened timber.',
+    enrageTrigger: 'At < 40% HP, volcanic adrenaline flushes its crest blazing orange and increases leap speed by 40%.',
     tells: [
       {
-        name: 'Arched Feather Flare',
-        description: 'The Raptor lowers its snout flush to the ground, raises its tail quills, and flares its amber crest feathers for 0.6s before leaping.',
-        counterplay: 'Dodge diagonally forward under its leap arc to end up directly behind its exposed hind tendons.',
+        name: 'Pounce Windup',
+        cue: 'Lowers feathered torso to the ground, spreads winged forelimbs, and hisses with a crimson crest flash.',
+        counter: 'Dodge roll sideways perpendicular to its line of sight, then strike the head crest during recovery.',
       },
       {
-        name: 'Vocal Hiss & Circling Feint',
-        description: 'Emits a sharp high-frequency clicking shriek while circling sideways to flank the hunter.',
-        counterplay: 'Do not chase while it circles; hold ground and ready a charged spear thrust as it commits to the line-of-sight charge.',
-      },
-    ],
-    attackModes: [
-      {
-        name: 'Sickle Claw Lunge',
-        damageType: 'Piercing Slashing',
-        danger: 'High speed direct pounce causing immediate knockdown.',
-      },
-      {
-        name: 'Spinning Tail Sweep',
-        damageType: 'Blunt Impact',
-        danger: 'A 360-degree rotation that punishes hunters attempting to stay behind its tail.',
+        name: 'Spinning Tail Whip',
+        cue: 'Pivots head over shoulder and coils its stiffened counterbalance tail.',
+        counter: 'Roll backward out of tail radius or iframe through the sweep.',
       },
     ],
     weaknesses: [
       {
-        part: 'Throat & Crest',
-        multiplier: '2.2x Damage',
-        breakEffect: 'Severely reduces pack call aggression and lowers recovery time between lunges.',
+        part: 'Feathered Skull Crest',
+        multiplier: '1.55x Damage',
+        breakBonus: 'Drops extra Raptor Talon + causes long knockdown stagger',
       },
       {
-        part: 'Hind Leg Tendon',
-        multiplier: '1.6x Damage',
-        breakEffect: 'Cripples sprint agility, shortening leap distance and causing a 3.0s ground stumble.',
+        part: 'Counterbalance Tail Plume',
+        multiplier: '1.35x Damage',
+        breakBonus: 'Drops Raptor Scale-Hide + reduces pounce distance',
       },
     ],
-    enragedBehavior: 'At < 40% HP, volcanic adrenaline courses through its veins, turning its eye crests blazing orange. Attack recovery windows decrease by 40%, and it executes consecutive leap attacks.',
-    harvestableDrops: [
-      { item: 'raptor_claw', rarity: 'Common', description: 'Curved razor-sharp talon used as harpoon barb heads and arrowheads.' },
-      { item: 'beast_bone', rarity: 'Common', description: 'Dense avian-dinosaur femur ideal for tool shafts and armor frames.' },
-      { item: 'tough_tendon', rarity: 'Uncommon', description: 'High-tensile fibrous sinew essential for bowstrings and pitfall snares.' },
-      { item: 'beast_hide', rarity: 'Common', description: 'Supple reptilian leather offering balanced defense and maximum agility.' },
-    ],
+    drops: ['Raptor Talon', 'Raptor Scale-Hide', 'Dense Beast Bone'],
     huntingTips: [
-      'Lay a Shock-Vine Pitfall Trap right before engaging; lure its initial pounce into the snare for an immediate 3.5s punish window.',
-      'Aimed stone throws will interrupt its stalking circle and provoke a predictable straight charge.',
-      'Heavy spear thrusts to the throat break its crest quickly, neutralizing its speed.',
-    ],
-    associatedRecipes: [
-      'Raptor Bone Harpoon (Weapon: +38 Dmg, Serrated Bleed)',
-      'Stalker Leather Jerkin (Armor: +16 Def, +15 Stamina Pool)',
-      'Shock-Vine Pitfall Trap (Supply: Grounds leaping beasts)',
+      'Throw a Lure Stone [R] near a Sinew Snare Trap [T] to lock the Raptor Alpha in place.',
+      'Use Heavy Thrusts [Right Click] on its Feathered Skull Crest right after it misses a lunge.',
     ],
   },
-
+  snapjaw: {
+    species: 'snapjaw',
+    name: 'River Snapjaw Leviathan',
+    title: 'Amphibious Predator of River & Ocean',
+    biomeName: 'Crystal River & Coastal Shallows',
+    threatLevel: 3,
+    diet: 'Piscivorous & Ambush Apex',
+    sizeLabel: '10.4m Length · 3.1m Height',
+    lore: 'An armored prehistoric crocodilian-spinosaur leviathan that rules the winding Crystal River and ocean delta. Covered in turquoise-slate osteoderms with a towering hydro-sail fin and interlocking rows of conical teeth, it surges from the water to ambush prey along the river stones.',
+    enrageTrigger: 'At < 45% HP, its dorsal hydro-sail and gullet glow electric cyan as it unleashes rapid hydro-lunges.',
+    tells: [
+      {
+        name: 'Tidal Jaw Lunge',
+        cue: 'Gapes its massive toothed jaws wide with a cyan bioluminescent throat glow and thrashes its tail.',
+        counter: 'Sidestep onto the dry riverbank boulders and pierce its exposed gullet.',
+      },
+      {
+        name: 'Hydro-Tail Cyclone',
+        cue: 'Arches its dorsal sail fin and curls its armored paddle-tail sideways.',
+        counter: 'Dodge away from the water splash radius, then counter-attack the dorsal sail.',
+      },
+    ],
+    weaknesses: [
+      {
+        part: 'Bioluminescent River Maw',
+        multiplier: '1.60x Damage',
+        breakBonus: 'Drops Raptor Talon + shatters jaw bite power',
+      },
+      {
+        part: 'Serrated Hydro-Sail Crest',
+        multiplier: '1.45x Damage',
+        breakBonus: 'Drops Calcified Coral Stone + triggers long stagger',
+      },
+    ],
+    drops: ['Calcified Coral Stone', 'Raptor Talon', 'Dense Beast Bone'],
+    huntingTips: [
+      'Fight near the wooden river bridge or wide cobble shoals so you have room to dodge its lunge.',
+      'Aim heavy spear thrusts at its towering dorsal sail when it pauses after a charge.',
+    ],
+  },
   brontoshell: {
     species: 'brontoshell',
     name: 'Gilded Brontoshell Behemoth',
     title: 'Ancient Carapace of the Black Coast',
-    threatLevel: 'High',
-    habitat: 'Black-Sand Coast, Basalt Tide Pools & Obsidian Caves',
-    diet: 'Mineralivore & Tidal Kelp Grazer',
-    lore: 'An ancient amphibious titan whose shell has fused with black volcanic sand, cooled magma crust, and glittering mineral deposits over centuries. It moves with ponderous deliberation, but can release concussive ground slams that crack basalt shores.',
+    biomeName: 'Black Sand Coast & Ocean Bay',
+    threatLevel: 3,
+    diet: 'Armored Lithovore & Kelp Grazer',
+    sizeLabel: '11.2m Length · 4.5m Height',
+    lore: 'A living fortress of the Black Sand Coast. Over decades, the Brontoshell fuses abyssal coral, hexagonal basalt scutes, and gilded mineral deposits into an impenetrable domed shell. Only its horned beak and spiked tail club remain exposed.',
+    enrageTrigger: 'At < 40% HP, bioluminescent coastal vents along its shell rim glow cyan and its seismic slams create wider shockwaves.',
     tells: [
       {
-        name: 'Two-Legged Pillar Stance',
-        description: 'Rears high onto its two hind legs for a prolonged 1.2s telegraph, casting a massive shadow before crashing down.',
-        counterplay: 'Roll outward immediately as its front paws touch the ground; the seismic shockwave radiates 4 meters.',
+        name: 'Bulldozer Shell Charge',
+        cue: 'Tucks limbs slightly inward and scrapes the black sand twice with front claws.',
+        counter: 'Lead its charge into coastal boulders or dodge sideways, then punish the exposed head.',
       },
       {
-        name: 'Carapace Vent Steam Whistle',
-        description: 'Vents steam from its volcanic shell scutes, hissing loudly as it prepares a heavy spinning shell slide.',
-        counterplay: 'Sprint perpendicular to its forward line of motion; do not attempt to block.',
-      },
-    ],
-    attackModes: [
-      {
-        name: 'Seismic Carapace Slam',
-        damageType: 'Crushing Earth Shock',
-        danger: 'Massive area of effect that staggers and deals severe blunt trauma.',
-      },
-      {
-        name: 'Obsidian Beak Snap',
-        damageType: 'Shearing Pierce',
-        danger: 'Forward horn strike that can shatter wooden weapons.',
+        name: 'Seismic Tail Club Slam',
+        cue: 'Rears its massive front legs skyward before crashing down and swinging its spiked tail mace.',
+        counter: 'Sprint or roll clear of the shockwave ring, then rush in to strike the tail club.',
       },
     ],
     weaknesses: [
       {
-        part: 'Soft Underbelly',
-        multiplier: '2.5x Damage',
-        breakEffect: 'Massive vulnerability when exposed during rear-up and after pitfall trap triggers.',
+        part: 'Beaked Head',
+        multiplier: '1.60x Damage',
+        breakBonus: 'Drops Brontoshell Carapace + stuns beast for 4.5s',
       },
       {
-        part: 'Unarmored Head',
-        multiplier: '2.0x Damage',
-        breakEffect: 'Breaks jaw horns and causes disorientation.',
+        part: 'Spiked Tail Club',
+        multiplier: '1.45x Damage',
+        breakBonus: 'Drops Calcified Coral Stone + shrinks slam shockwave',
       },
     ],
-    enragedBehavior: 'When enraged, molten geysers erupt from its dorsal shell scutes, creating lingering magma hazard zones on the ground.',
-    harvestableDrops: [
-      { item: 'bronto_shell', rarity: 'Uncommon', description: 'Thick basalt carapace scute impervious to ordinary blunt attacks.' },
-      { item: 'obsidian_shard', rarity: 'Uncommon', description: 'Razor volcanic glass flaked from its outer tide crust.' },
-      { item: 'volcanic_resin', rarity: 'Common', description: 'Hardened geothermal amber used to fuse heavy plate bindings.' },
-      { item: 'beast_bone', rarity: 'Common', description: 'Heavy structural bone capable of bearing immense loads.' },
-    ],
+    drops: ['Brontoshell Carapace', 'Calcified Coral Stone', 'Dense Beast Bone'],
     huntingTips: [
-      'Striking its dorsal carapace deflects light spear hits. Always maneuver to its flanks or wait for its two-legged stance to strike the underbelly.',
-      'In heavy rain weather, its shell cools and steam vents emit thicker clouds, revealing blind spots.',
-      'Obsidian Glaives have enough blade curve to bypass its side shell rim.',
-    ],
-    associatedRecipes: [
-      'Obsidian Razor Glaive (Weapon: +58 Dmg, Glass Lacerations)',
-      'Brontoshell Chitin Plate (Armor: +32 Def, Absorbs Charge Damage)',
-      'Signal Tower: Mirror Reflector (Tower Component: Progress +50%)',
+      'Body strikes deal reduced damage against its domed shell—always target the Beaked Head or Spiked Tail Club.',
+      'Activate Hunter Focus [F] to highlight both weak points clearly against the dark coastal sand.',
     ],
   },
-
+  frostfang: {
+    species: 'frostfang',
+    name: 'Frostfang Glacial Mammoth',
+    title: 'Colossus of the Cold Snow Mountains',
+    biomeName: 'Eastern Cold Snow Mountains',
+    threatLevel: 4,
+    diet: 'Alpine Pine & Permafrost Grazer',
+    sizeLabel: '12.6m Length · 5.4m Height',
+    lore: 'Towering above the snow-dusted pines of the eastern mountain peaks, the Frostfang Glacial Mammoth is draped in thick white-and-slate winter wool, crystalline ice armor along its humped spine, and a pair of colossal spiraled ivory tusks that can shatter granite boulders.',
+    enrageTrigger: 'At < 45% HP, a localized blizzard swirls around its crystalline ice hump and its tusks glow with sub-zero frost.',
+    tells: [
+      {
+        name: 'Avalanche Tusk Gore',
+        cue: 'Raises its muscular trunk high, trumpets a echoing horn blast, and lowers its giant curved ivory tusks.',
+        counter: 'Dodge laterally as it thunders past, then strike the curved tusks while they are wedged in the snow.',
+      },
+      {
+        name: 'Permafrost Stomp',
+        cue: 'Lifts both pillar-like forelegs and crystallizes frost around its hooves.',
+        counter: 'Roll backward out of the frost shockwave and counter-attack its head or ice-ridge hump.',
+      },
+    ],
+    weaknesses: [
+      {
+        part: 'Curved Glacial Ivory Tusks',
+        multiplier: '1.65x Damage',
+        breakBonus: 'Drops Conductive Crest-Horn Ivory + massive stagger window',
+      },
+      {
+        part: 'Crystalline Ice-Ridge Hump',
+        multiplier: '1.45x Damage',
+        breakBonus: 'Drops Dense Beast Bone + weakens frost shockwaves',
+      },
+    ],
+    drops: ['Conductive Crest-Horn', 'Dense Beast Bone', 'Obsidian Shard'],
+    huntingTips: [
+      'Climb the eastern snow mountain trail carefully and watch for its white silhouette against the glacial spires.',
+      'Shattering its Curved Glacial Ivory Tusks deals massive bonus damage and topples the colossus.',
+    ],
+  },
   thunderhorn: {
     species: 'thunderhorn',
-    name: 'Thunderhorn Prime',
-    title: 'Earth-Shaker of Steaming Springs',
-    threatLevel: 'Extreme',
-    habitat: 'Steaming Springs, Sulfur Caldera Basin & Geyser Vents',
-    diet: 'Geothermal Mineral Fronds & Sulfur Salt Licks',
-    lore: 'A thunderous quadrupedal colossus with dual piezoelectric ivory horns that store electrostatic energy from sulfuric geyser discharges. When startled or challenged, it accelerates like a runaway volcanic boulder, obliterating trees and stone pillars.',
+    name: 'Thunderhorn Ceratopsian Prime',
+    title: 'Warden of the Geothermal Springs',
+    biomeName: 'Sulfur Geothermal Springs',
+    threatLevel: 4,
+    diet: 'Sulfur-Flora Herbivore (Highly Territorial)',
+    sizeLabel: '12.5m Length · 4.8m Height',
+    lore: 'Inhabiting the boiling mineral terraces, the Thunderhorn channels static electricity through its metallic nasal horn and scalloped bone frill. When threatened, its frill arcs with golden bio-lightning capable of shattering stone.',
+    enrageTrigger: 'At < 45% HP, static arcs crackle continuously across its frill and it chains double gore charges.',
     tells: [
       {
-        name: 'Snout Scrape & Blue Arc Spark',
-        description: 'Scrapes its hooves across sulfur dust three times while blue electric arcs jump between its dual horns.',
-        counterplay: 'Stand directly in front of a basalt pillar or rock formation, then dodge at the exact split-second it charges to make it crash into the obstacle.',
+        name: 'Lightning Gore Rush',
+        cue: 'Lowers its huge armored frill, pawing the sulfur crust as golden sparks erupt from its nasal horn.',
+        counter: 'Wait until the final moment of the windup to dodge sideways, then strike the Exposed Thermal Flank.',
       },
       {
-        name: 'Head Toss Bellow',
-        description: 'Tosses its heavy armored crown upward, shaking the ground with a deep guttural bellow.',
-        counterplay: 'Punish with thrown stones or a heavy thrust right as its snout descends back to neutral height.',
-      },
-    ],
-    attackModes: [
-      {
-        name: 'Freight-Train Horn Charge',
-        damageType: 'Piercing Impact',
-        danger: 'Catastrophic forward rush over 20 meters that deals devastating damage.',
-      },
-      {
-        name: 'Lateral Horn Sweep',
-        damageType: 'Electric Sweep',
-        danger: 'High-arc horn flick covering a wide 180-degree frontal cone.',
+        name: 'Cranial Horn Uppercut',
+        cue: 'Dips its snout below knee level and lets out a metallic bellow.',
+        counter: 'Roll diagonally behind its front shoulder and unleash a fully charged Heavy Thrust.',
       },
     ],
     weaknesses: [
       {
-        part: 'Thunder Crest Horns',
-        multiplier: '1.8x Damage',
-        breakEffect: 'Shatters the primary horn, permanently disabling its high-damage charging momentum.',
+        part: 'Conductive Nasal Horn',
+        multiplier: '1.65x Damage',
+        breakBonus: 'Guaranteed Conductive Crest-Horn drop + massive knockdown',
       },
       {
-        part: 'Rib Gland',
-        multiplier: '2.0x Damage',
-        breakEffect: 'Disrupts internal sulfur circulation, causing repeated exhaustion stumbles.',
+        part: 'Exposed Thermal Vent Flank',
+        multiplier: '1.40x Damage',
+        breakBonus: 'Drops Obsidian Shard + slows charge turn rate',
       },
     ],
-    enragedBehavior: 'In enraged mode, lightning crackles along its entire spine ridge. Its charge changes direction midway through the rush to track the hunter.',
-    harvestableDrops: [
-      { item: 'titan_horn', rarity: 'Rare', description: 'Electrically conductive titan horn used in apex weapons and brazier mounts.' },
-      { item: 'obsidian_shard', rarity: 'Uncommon', description: 'Igneous glass dislodged from its mountain charging runs.' },
-      { item: 'volcanic_resin', rarity: 'Common', description: 'Sulfur-rich volcanic sap with extreme heat resistance.' },
-      { item: 'beast_hide', rarity: 'Common', description: 'Pachyderm-grade hide that insulates against electric and thermal shocks.' },
-    ],
+    drops: ['Conductive Crest-Horn', 'Obsidian Shard', 'Dense Beast Bone'],
     huntingTips: [
-      'Never attempt to trade blows with Thunderhorn while it is in motion; observation and spacing are paramount.',
-      'Place a pitfall trap in its charge path to completely flip the beast onto its flank for a 4-second punish window.',
-      'Breaking its horns yields the rare Titan Horn required for the Titan Magma Lance.',
-    ],
-    associatedRecipes: [
-      'Titan Magma Lance (Weapon: +85 Dmg, Explosive Piercing)',
-      'Signal Tower: Magma Igniter Brazier (Tower Component: Progress +100%)',
+      'Craft the Brontoshell Carapace Plate before challenging the Thunderhorn to survive its high-voltage charges.',
+      'Sinew Snare Traps interrupt its gore charge and expose its Conductive Nasal Horn at eye level.',
     ],
   },
-
   caldera_titan: {
     species: 'caldera_titan',
-    name: 'Ignis Titanus Caldera',
-    title: 'Apex Sovereign of the Volcanic Core',
-    threatLevel: 'Apex Sovereign',
-    habitat: 'Caldera Summit, Lava Core Crater & High Altar',
-    diet: 'Molten Geothermal Energy & Ancient Primordial Beasts',
-    lore: 'The primordial apex beast that slumbers inside the island’s molten heart. Born of liquid magma, basalt armor, and ancient dragon bone, its roar triggers earthquakes and volcanic ash storms. It guards the ancient signal tower peak against all intruders.',
+    name: 'Ignis-Rex, The Caldera Titan',
+    title: 'Sovereign of the Molten Summit',
+    biomeName: 'Volcanic Rift & Caldera Summit',
+    threatLevel: 5,
+    diet: 'Apex Volcanic Predator',
+    sizeLabel: '16.4m Length · 6.5m Height',
+    lore: 'The undisputed ruler of Primal Caldera. Ignis-Rex is an ancient theropod-dragon whose obsidian hide is veined with living magma. Its heart beats like a volcanic furnace—only by claiming its Titan Fang and Magma Heart can the Ancient Signal Tower be ignited.',
+    enrageTrigger: 'At < 50% HP, magma veins across its entire body flare incandescent white-orange, unleashing devastating eruption slams.',
     tells: [
       {
-        name: 'Chest Core Deep Glow',
-        description: 'The volcanic core in its chest ignites into blinding white-orange radiance for 1.0s, accompanied by deep sub-bass tremors.',
-        counterplay: 'Prepare for an explosive magma torrent; sprint diagonally away from its mouth trajectory or roll into its flank.',
+        name: 'Cataclysmic Jaws Charge',
+        cue: 'Inhales embers into its molten maw, roaring as lava drips from its fangs before lunging.',
+        counter: 'Time your dodge i-frames through the initial snap, then counter-strike the Molten Maw.',
       },
       {
-        name: 'Wings-Back Roar & Tail Coil',
-        description: 'Coils its colossal spiked tail to the left while roaring into the sky.',
-        counterplay: 'Jump or roll away from the clockwise tail sweep that covers a 12-meter circular zone.',
-      },
-    ],
-    attackModes: [
-      {
-        name: 'Caldera Magma Breath',
-        damageType: 'Molten Fire Wave',
-        danger: 'Sustained cone of molten rock that leaves burning trails in the ash.',
-      },
-      {
-        name: 'Cataclysm Ground Eruption',
-        damageType: 'Seismic Flame Burst',
-        danger: 'Summons 3 explosive magma pillars from cracks in the ground around the player.',
+        name: 'Caldera Eruption Stomp',
+        cue: 'Raises its massive clawed foot high while its Volcanic Heart Core pulses bright gold.',
+        counter: 'Evade the ground impact, then rush directly under its chest to pierce the Volcanic Heart Core.',
       },
     ],
     weaknesses: [
       {
-        part: 'Glowing Magma Heart',
-        multiplier: '2.6x Damage',
-        breakEffect: 'Extinguishes its core glow and exposes its rib cage, preventing magma breath for 30 seconds.',
+        part: 'Molten Maw & Crown',
+        multiplier: '1.75x Damage',
+        breakBonus: 'Drops Sovereign Titan Fang + triggers long collapse stagger',
       },
       {
-        part: 'Ancient Titan Horns',
-        multiplier: '2.0x Damage',
-        breakEffect: 'Weakens its headbutt and lowers resistance to stagger.',
+        part: 'Volcanic Heart Core',
+        multiplier: '1.60x Damage',
+        breakBonus: 'Drops Apex Magma Heart + suppresses magma rage aura',
       },
     ],
-    enragedBehavior: 'At < 50% HP, the Caldera Titan enters Primordial Fury. The sky turns blood-red, ash storms intensify, and its tail strikes release explosive magma shockwaves.',
-    harvestableDrops: [
-      { item: 'magma_core', rarity: 'Legendary', description: 'A self-sustaining sphere of concentrated volcanic core energy.' },
-      { item: 'titan_scale', rarity: 'Rare', description: 'Impervious dragon-titan scale forged in mantle-level heat.' },
-      { item: 'titan_horn', rarity: 'Rare', description: 'Ancient titan crown horn of immense ceremonial and structural power.' },
-      { item: 'obsidian_shard', rarity: 'Uncommon', description: 'Pristine black obsidian crystals from the caldera rim.' },
-    ],
+    drops: ['Sovereign Titan Fang', 'Apex Magma Heart', 'Obsidian Shard'],
     huntingTips: [
-      'Only approach after crafting the Brontoshell or Titan Harness armor to survive thermal shock.',
-      'Focus all attacks on its chest core whenever it recovers from a magma breath burst.',
-      'Defeating this creature permanently dispels volcanic interference and allows lighting the Signal Tower beacon.',
-    ],
-    associatedRecipes: [
-      'Volcanic Titan Harness (Armor: +50 Def, +40 Stamina Bonus)',
-      'Signal Tower Beacon Ignition (Final Objective: Beacon Fire Lit!)',
+      'Forge the Thunderhorn Siege Lance and Thunder-Warden Aegis at the Campfire before ascending the Caldera.',
+      'Save your Sinew Snare Traps for when Ignis-Rex enters its Enraged phase below 50% HP.',
     ],
   },
 };

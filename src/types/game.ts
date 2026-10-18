@@ -3,145 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type GameState = 'title' | 'playing' | 'paused' | 'gameover' | 'victory';
+export type GameState = 'title' | 'playing' | 'paused' | 'crafting' | 'gameover' | 'defeat' | 'victory';
 
-export type BiomeType = 'jungle' | 'coast' | 'springs' | 'lava' | 'caldera';
-
-export interface Vector2D {
-  x: number;
-  z: number;
-}
-
-export interface PlayerStats {
-  hp: number;
-  maxHp: number;
-  stamina: number;
-  maxStamina: number;
-  staminaRegen: number;
-  healingFlasks: number;
-  maxHealingFlasks: number;
-  flaskHealAmount: number;
-  traps: number;
-  maxTraps: number;
-  stones: number;
-  attackPower: number;
-  defense: number;
-  critChance: number;
-}
-
-export type WeaponId = 'flint_spear' | 'bone_harpoon' | 'obsidian_glaive' | 'caldera_lance';
-export type ArmorId = 'scavenger_rags' | 'beast_hide' | 'chitin_cuirass' | 'caldera_plate';
-export type ToolId = 'bone_knife' | 'climbing_hook' | 'signal_igniter';
-
-export interface WeaponDef {
-  id: WeaponId;
-  name: string;
-  damage: number;
-  staminaCost: number;
-  range: number;
-  critBonus: number;
-  description: string;
-  materialsRequired: Record<string, number>;
-}
-
-export interface ArmorDef {
-  id: ArmorId;
-  name: string;
-  defense: number;
-  staminaBonus: number;
-  description: string;
-  materialsRequired: Record<string, number>;
-}
-
-export interface CraftingRecipe {
-  id: string;
-  name: string;
-  category: 'weapon' | 'armor' | 'supplies' | 'beacon';
-  description: string;
-  cost: Record<string, number>;
-  unlockedByDefault?: boolean;
-}
-
-export type BeastSpecies = 'raptor' | 'brontoshell' | 'thunderhorn' | 'caldera_titan';
-
-export interface BeastWeakPoint {
-  id: string;
-  name: string;
-  offset: [number, number, number]; // relative to beast root
-  radius: number;
-  damageMultiplier: number;
-  broken: boolean;
-  breakThreshold: number;
-  accumulatedDamage: number;
-}
-
-export interface BeastState {
-  id: string;
-  species: BeastSpecies;
-  name: string;
-  title: string;
-  x: number;
-  y: number;
-  z: number;
-  rotation: number;
-  hp: number;
-  maxHp: number;
-  enraged: boolean;
-  staggered: boolean;
-  staggerTimer: number;
-  attackCooldown: number;
-  state: 'idle' | 'patrol' | 'stalk' | 'telegraph' | 'attack' | 'recover' | 'staggered' | 'flee' | 'dead';
-  currentAttackName: string;
-  telegraphProgress: number; // 0 to 1
-  weakPoints: BeastWeakPoint[];
-  drops: Record<string, number>;
-  biome: BiomeType;
-  carved: boolean;
-  alertLevel: number; // 0 (unaware) to 1 (full combat)
-}
-
-export interface TrackClue {
-  id: string;
-  type: 'footprint' | 'broken_brush' | 'blood' | 'droppings' | 'claw_mark';
-  x: number;
-  y: number;
-  z: number;
-  rotation: number;
-  beastId: string;
-  species: BeastSpecies;
-  age: number; // 0 is fresh, 1 is old
-  inspected: boolean;
-}
-
-export interface QuestStep {
-  id: string;
-  title: string;
-  description: string;
-  targetRegion: BiomeType;
-  completed: boolean;
-  targetBeastSpecies?: BeastSpecies;
-  requiredMaterial?: { id: string; count: number };
-}
-
-export interface Inventory {
-  materials: Record<string, number>;
-  weapons: WeaponId[];
-  equippedWeapon: WeaponId;
-  armors: ArmorId[];
-  equippedArmor: ArmorId;
-  tools: ToolId[];
-}
-
-export interface GameSettings {
-  mouseSensitivity: number;
-  touchSensitivity: number;
-  invertY: boolean;
-  masterVolume: number;
-  sfxVolume: number;
-  musicVolume: number;
-  difficulty: 'story' | 'hunter' | 'savage';
-  vibration: boolean;
-}
+export type BiomeType = 'jungle' | 'coast' | 'springs' | 'lava' | 'caldera' | 'snow' | 'river' | 'ocean';
 
 export type WeatherType = 'clear' | 'heavy_rain' | 'dense_fog' | 'ash_storm';
 
@@ -153,44 +17,236 @@ export interface WeatherCondition {
   sunIntensity: number;
   skyColor: number;
   fogColor: number;
-  beastAwarenessMod: number; // e.g. 0.8 in rain (harder for beast to hear player)
-  beastSpeedMod: number; // e.g. 1.15 in ash storm (beasts agitated)
-  scentDecayRate: number; // e.g. 1.8 in rain (tracks wash out faster)
+  beastAwarenessMod: number;
+  beastSpeedMod: number;
+  scentDecayRate: number;
+  staminaMultiplier?: number;
 }
 
-export type BeastKnowledgeLevel = 'unknown' | 'tracked' | 'observed' | 'mastered';
+export type BeastSpecies =
+  | 'raptor'
+  | 'brontoshell'
+  | 'thunderhorn'
+  | 'frostfang'
+  | 'snapjaw'
+  | 'caldera_titan';
+
+export type BeastKnowledgeLevel = 'unseen' | 'unknown' | 'tracked' | 'sighted' | 'mastered';
+
+export type WeaponId =
+  | 'flint_spear'
+  | 'raptor_harpoon'
+  | 'thunder_lance'
+  | 'caldera_fang_glaive';
+
+export type ArmorId =
+  | 'scavenger_rags'
+  | 'raptor_stalker_garb'
+  | 'bronto_plate_mail'
+  | 'thunder_warden_aegis';
+
+export type ToolId = 'bone_knife' | 'sinew_trap' | 'snare_trap' | 'lure_stone' | 'vitality_salve';
+
+export type MaterialId =
+  | 'beast_bone'
+  | 'raptor_claw'
+  | 'raptor_hide'
+  | 'bronto_shell'
+  | 'bronto_tail_club'
+  | 'thunder_horn'
+  | 'electric_sac'
+  | 'frost_fang'
+  | 'glacial_pelt'
+  | 'snapjaw_scale'
+  | 'river_pearl'
+  | 'titan_fang'
+  | 'magma_core'
+  | 'sun_herb'
+  | 'volcanic_resin'
+  | 'obsidian_shard'
+  | 'coral_stone';
+
+export interface WeaponDef {
+  id: WeaponId;
+  name: string;
+  tier: number;
+  baseDamage: number;
+  heavyMultiplier: number;
+  staminaCostLight: number;
+  staminaCostHeavy: number;
+  critChance: number;
+  reach: number;
+  description: string;
+  color: string;
+  accentColor: string;
+}
+
+export interface ArmorDef {
+  id: ArmorId;
+  name: string;
+  tier: number;
+  defense: number;
+  maxHpBonus: number;
+  maxStaminaBonus: number;
+  dodgeStaminaReduction: number;
+  description: string;
+  color: string;
+  trimColor: string;
+}
+
+export interface CraftingRecipe {
+  id: string;
+  name: string;
+  category: 'weapon' | 'armor' | 'tool' | 'tower';
+  targetId: WeaponId | ArmorId | ToolId | 'ancient_flare';
+  description: string;
+  tier: number;
+  ingredients: { materialId: MaterialId; count: number }[];
+}
+
+export interface BeastWeakPoint {
+  id: string;
+  name: string;
+  localOffset: { x: number; y: number; z: number };
+  radius: number;
+  damageMultiplier: number;
+  partHp: number;
+  maxPartHp: number;
+  broken: boolean;
+  bonusDropMaterialId: MaterialId;
+}
+
+export type BeastAIState =
+  | 'patrol'
+  | 'alert'
+  | 'chase'
+  | 'telegraph_bite'
+  | 'telegraph_charge'
+  | 'telegraph_slam'
+  | 'attack_bite'
+  | 'attack_charge'
+  | 'attack_slam'
+  | 'staggered'
+  | 'enraged_roar'
+  | 'dead';
+
+export interface BeastState {
+  id: string;
+  species: BeastSpecies;
+  name: string;
+  title: string;
+  biome: BiomeType;
+  hp: number;
+  maxHp: number;
+  stamina: number;
+  maxStamina: number;
+  enraged: boolean;
+  staggered?: boolean;
+  state?: string;
+  telegraphProgress?: number;
+  aiState: BeastAIState;
+  stateTimer: number;
+  x: number;
+  y: number;
+  z: number;
+  rotation: number;
+  scale?: number;
+  weakPoints: BeastWeakPoint[];
+  carved: boolean;
+  snaredTimer: number;
+}
+
+export interface PlayerStats {
+  hp: number;
+  maxHp: number;
+  stamina: number;
+  maxStamina: number;
+  staminaRegenRate: number;
+  attackPower: number;
+  defense: number;
+  critChance: number;
+  healingFlasks: number;
+  maxHealingFlasks: number;
+  traps: number;
+  maxTraps: number;
+  lureStones: number;
+  maxLureStones: number;
+}
+
+export interface QuestStep {
+  id: string;
+  title: string;
+  description: string;
+  targetBiome: BiomeType;
+  targetX: number;
+  targetZ: number;
+  completed: boolean;
+}
+
+export interface TrackClue {
+  id: string;
+  species: BeastSpecies;
+  biome: BiomeType;
+  x: number;
+  y: number;
+  z: number;
+  discovered: boolean;
+  clueType?: 'footprint' | 'claw_mark' | 'shed_scale' | 'charred_bone' | 'frozen_fur' | 'river_slide';
+  description: string;
+}
+
+export type NPCId = 'chief_kael' | 'smith_torak' | 'forgemaster_torak' | 'scout_lyra';
+
+export interface TribalNPC {
+  id: NPCId;
+  name: string;
+  role: string;
+  biome: BiomeType;
+  x: number;
+  y: number;
+  z: number;
+  rotation: number;
+  greeting: string;
+  tip?: string;
+  giftMaterial?: { id: MaterialId; count: number; claimed: boolean };
+}
 
 export interface BeastopediaEntry {
   species: BeastSpecies;
   name: string;
   title: string;
-  lore: string;
-  habitat: string;
+  threatLevel: 1 | 2 | 3 | 4 | 5;
+  biomeName: string;
   diet: string;
-  threatLevel: 'Moderate' | 'High' | 'Extreme' | 'Apex Sovereign';
-  tells: Array<{
+  sizeLabel: string;
+  lore: string;
+  tells: {
     name: string;
-    description: string;
-    counterplay: string;
-  }>;
-  attackModes: Array<{
-    name: string;
-    damageType: string;
-    danger: string;
-  }>;
-  weaknesses: Array<{
+    cue: string;
+    counter: string;
+  }[];
+  weaknesses: {
     part: string;
     multiplier: string;
-    breakEffect: string;
-  }>;
-  enragedBehavior: string;
-  harvestableDrops: Array<{
-    item: string;
-    rarity: 'Common' | 'Uncommon' | 'Rare' | 'Legendary';
-    description: string;
-  }>;
+    breakBonus: string;
+  }[];
   huntingTips: string[];
-  associatedRecipes: string[];
+  drops: string[];
+  enrageTrigger: string;
+}
+
+export interface GameSettings {
+  cameraSensitivity: number;
+  mouseSensitivity: number;
+  touchSensitivity: number;
+  invertY: boolean;
+  audioVolume: number;
+  masterVolume: number;
+  sfxVolume: number;
+  musicVolume: number;
+  sfxMuted: boolean;
+  difficulty: 'story' | 'hunter' | 'savage' | 'apex';
+  showDamageNumbers: boolean;
 }
 
 export interface SaveData {
@@ -200,12 +256,19 @@ export interface SaveData {
   biome: BiomeType;
   playerPos: { x: number; y: number; z: number };
   playerStats: PlayerStats;
-  inventory: Inventory;
-  beastsHunted: string[];
+  inventory: {
+    materials: Record<string, number>;
+    weapons: WeaponId[];
+    equippedWeapon: WeaponId;
+    armors: ArmorId[];
+    equippedArmor: ArmorId;
+    tools: ToolId[];
+  };
+  beastsHunted: BeastSpecies[];
   currentQuestIndex: number;
-  signalTowerProgress: number; // 0 to 100
+  signalTowerProgress: number;
   beaconLit: boolean;
-  settings: GameSettings;
-  beastKnowledge?: Record<BeastSpecies, BeastKnowledgeLevel>;
+  beastKnowledge: Record<BeastSpecies, BeastKnowledgeLevel>;
   currentWeather?: WeatherType;
+  settings: GameSettings;
 }

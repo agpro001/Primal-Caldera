@@ -3,285 +3,240 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type {
   GameState,
   PlayerStats,
   BeastState,
   WeaponId,
   ArmorId,
-  GameSettings,
-  CraftingRecipe,
-  SaveData,
   WeatherType,
   BeastSpecies,
   BeastKnowledgeLevel,
+  CraftingRecipe,
+  GameSettings,
+  SaveData,
 } from './types/game.ts';
 import { GameEngine } from './game/engine/gameEngine.ts';
-import { loadSavedGame, saveGame, loadSettings, saveSettings } from './game/storage/saveSystem.ts';
-import { HUD } from './components/HUD.tsx';
 import { TitleScreen } from './components/TitleScreen.tsx';
+import { HUD } from './components/HUD.tsx';
 import { CraftingModal } from './components/CraftingModal.tsx';
 import { BeastopediaModal } from './components/BeastopediaModal.tsx';
 import { PauseSettingsModal } from './components/PauseSettingsModal.tsx';
 import { VictoryDefeatModal } from './components/VictoryDefeatModal.tsx';
+import {
+  getInitialSaveData,
+  loadSavedGame,
+  saveGame,
+  loadSettings,
+  saveSettings,
+} from './game/storage/saveSystem.ts';
 import { sound } from './game/audio/soundEngine.ts';
 
-export default function App() {
-  const mountRef = useRef<HTMLDivElement>(null);
+export function App() {
+  const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
 
-  const [gameState, setGameState] = useState<GameState>('title');
-  const [saveData, setSaveData] = useState(() => loadSavedGame());
+  const [saveData, setSaveData] = useState<SaveData>(() => loadSavedGame());
   const [settings, setSettings] = useState<GameSettings>(() => loadSettings());
 
-  const [playerStats, setPlayerStats] = useState<PlayerStats>(saveData.playerStats);
+  const [gameState, setGameState] = useState<GameState>('title');
+  const [stats, setStats] = useState<PlayerStats>(saveData.playerStats);
   const [targetBeast, setTargetBeast] = useState<BeastState | null>(null);
-  const [currentQuestIndex, setCurrentQuestIndex] = useState(saveData.currentQuestIndex);
+  const [currentQuestIndex, setCurrentQuestIndex] = useState<number>(saveData.currentQuestIndex);
   const [equippedWeapon, setEquippedWeapon] = useState<WeaponId>(saveData.inventory.equippedWeapon);
   const [equippedArmor, setEquippedArmor] = useState<ArmorId>(saveData.inventory.equippedArmor);
-  const [currentWeather, setCurrentWeather] = useState<WeatherType>(saveData.currentWeather || 'clear');
+  const [currentWeather, setCurrentWeather] = useState<WeatherType>('clear');
+  const [interactPrompt, setInteractPrompt] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{
+    message: string;
+    type: 'info' | 'loot' | 'danger';
+  } | null>(null);
+  const [focusVisionActive, setFocusVisionActive] = useState<boolean>(false);
+
+  const [craftingOpen, setCraftingOpen] = useState<boolean>(false);
+  const [beastopediaOpen, setBeastopediaOpen] = useState<boolean>(false);
+  const [settingsOpenOnTitle, setSettingsOpenOnTitle] = useState<boolean>(false);
+
   const [beastKnowledge, setBeastKnowledge] = useState<Record<BeastSpecies, BeastKnowledgeLevel>>(
     saveData.beastKnowledge || {
       raptor: 'tracked',
       brontoshell: 'tracked',
       thunderhorn: 'tracked',
+      frostfang: 'tracked',
+      snapjaw: 'tracked',
       caldera_titan: 'tracked',
     }
   );
-  const [interactPrompt, setInteractPrompt] = useState<string | null>(null);
-  const [notification, setNotification] = useState<{ message: string; type: 'info' | 'loot' | 'danger' } | null>(null);
-  const [focusVisionActive, setFocusVisionActive] = useState(false);
-  const [isCraftingOpen, setIsCraftingOpen] = useState(false);
-  const [isBeastopediaOpen, setIsBeastopediaOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [victoryStats, setVictoryStats] = useState<{ time?: number; beastsSlain: number; materialsGathered?: number }>({
-    beastsSlain: 0,
-  });
 
-  const showNotification = useCallback((message: string, type: 'info' | 'loot' | 'danger' = 'info') => {
-    setNotification({ message, type });
-    setTimeout(() => {
-      setNotification((curr) => (curr?.message === message ? null : curr));
-    }, 2800);
-  }, []);
+  const [endStats, setEndStats] = useState<{
+    time?: number;
+    beastsSlain: number;
+    materialsGathered?: number;
+  }>({ beastsSlain: 0 });
 
-  // Initialize Game Engine
   useEffect(() => {
-    if (!mountRef.current) return;
+    if (!containerRef.current) return;
 
     const initialSave = loadSavedGame();
-
-    const engine = new GameEngine(mountRef.current, initialSave, {
-      onStatsChange: (stats) => {
-        setPlayerStats({ ...stats });
+    const engine = new GameEngine(containerRef.current, initialSave, {
+      onStatsChange: (newStats) => setStats({ ...newStats }),
+      onTargetChange: (beast) => setTargetBeast(beast ? { ...beast } : null),
+      onNotification: (message, type) => {
+        setNotification({ message, type });
+        window.clearTimeout((window as unknown as { __notifTimer?: number }).__notifTimer);
+        (window as unknown as { __notifTimer?: number }).__notifTimer = window.setTimeout(
+          () => setNotification(null),
+          3800
+        );
       },
-      onTargetChange: (target) => {
-        setTargetBeast(target ? { ...target } : null);
-      },
-      onNotification: (msg, type) => {
-        showNotification(msg, type);
-      },
-      onInteractPrompt: (prompt) => {
-        setInteractPrompt(prompt);
-      },
-      onOpenCrafting: () => {
-        setIsCraftingOpen(true);
-      },
+      onInteractPrompt: (prompt) => setInteractPrompt(prompt),
+      onOpenCrafting: () => setCraftingOpen(true),
       onQuestUpdate: (questIdx) => {
         setCurrentQuestIndex(questIdx);
+        if (engineRef.current) {
+          const snap = engineRef.current.getSaveSnapshot();
+          setSaveData(snap);
+          saveGame(snap);
+        }
       },
-      onVictory: (stats) => {
-        setVictoryStats(stats);
+      onVictory: (vStats) => {
+        setEndStats(vStats);
         setGameState('victory');
-        engine.setGameState('victory');
+        if (engineRef.current) {
+          engineRef.current.setGameState('victory');
+          const snap = engineRef.current.getSaveSnapshot();
+          setSaveData(snap);
+          saveGame(snap);
+        }
       },
       onDefeat: () => {
+        if (engineRef.current) {
+          setEndStats({
+            beastsSlain: engineRef.current.beastsHunted.length,
+          });
+          engineRef.current.setGameState('gameover');
+        }
         setGameState('gameover');
-        engine.setGameState('gameover');
       },
-      onFocusChange: (active) => {
-        setFocusVisionActive(active);
-      },
-      onWeaponChange: (w) => {
-        setEquippedWeapon(w);
-      },
-      onWeatherChange: (w) => {
-        setCurrentWeather(w);
-      },
-      onKnowledgeUpdate: (k) => {
-        setBeastKnowledge({ ...k });
-      },
+      onFocusChange: (active) => setFocusVisionActive(active),
+      onWeaponChange: (weapon) => setEquippedWeapon(weapon),
+      onWeatherChange: (weather) => setCurrentWeather(weather),
+      onKnowledgeUpdate: (k) => setBeastKnowledge({ ...k }),
     });
 
     engineRef.current = engine;
 
-    // Check for ?autostart=1
+    // Support ?autostart=1 for automated testing and instant jump-in
     const params = new URLSearchParams(window.location.search);
     if (params.get('autostart') === '1') {
-      sound.triggerUserInteraction();
       engine.setGameState('playing');
       setGameState('playing');
     }
 
-    const onResize = () => engine.handleResize();
-    window.addEventListener('resize', onResize);
+    const handleResize = () => engine.handleResize();
+    window.addEventListener('resize', handleResize);
 
-    // Global Key Listener for Pause, Crafting, and Beastopedia
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Escape' || e.code === 'KeyP') {
-        if (isBeastopediaOpen) {
-          setIsBeastopediaOpen(false);
-          return;
-        }
-        if (isCraftingOpen) {
-          setIsCraftingOpen(false);
-          return;
-        }
-        if (isSettingsOpen) {
-          setIsSettingsOpen(false);
-          return;
-        }
-        setGameState((curr) => {
-          if (curr === 'playing') {
-            engine.setGameState('paused');
-            return 'paused';
-          }
-          if (curr === 'paused') {
-            engine.setGameState('playing');
-            return 'playing';
-          }
-          return curr;
-        });
-      } else if (e.code === 'Tab') {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Tab' && engine.gameState === 'playing') {
         e.preventDefault();
-        if (engine.gameState === 'playing') {
-          setIsCraftingOpen((prev) => !prev);
-        }
-      } else if (e.code === 'KeyB') {
-        if (engine.gameState === 'playing') {
-          setIsBeastopediaOpen((prev) => !prev);
+        setCraftingOpen((prev) => !prev);
+      } else if (e.code === 'KeyB' && engine.gameState === 'playing') {
+        e.preventDefault();
+        setBeastopediaOpen((prev) => !prev);
+      } else if (e.code === 'Escape') {
+        if (craftingOpen) {
+          setCraftingOpen(false);
+        } else if (beastopediaOpen) {
+          setBeastopediaOpen(false);
+        } else if (engine.gameState === 'playing') {
+          engine.setGameState('paused');
+          setGameState('paused');
+        } else if (engine.gameState === 'paused') {
+          engine.setGameState('playing');
+          setGameState('playing');
         }
       }
     };
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('keydown', handleKeyDown);
       engine.dispose();
     };
-  }, [showNotification]);
+  }, []);
 
-  // Start Game handler
-  const handleStartGame = () => {
-    if (!engineRef.current) return;
-    sound.triggerUserInteraction();
-    engineRef.current.setGameState('playing');
-    setGameState('playing');
-    showNotification('Welcome to Primal Caldera! Follow the tracks to stalk the Raptor pack.', 'loot');
-  };
-
-  // Resume Game handler
-  const handleResumeGame = () => {
-    if (!engineRef.current) return;
-    engineRef.current.setGameState('playing');
+  const handleStartHunt = () => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    engine.setGameState('playing');
     setGameState('playing');
   };
 
-  // Restart Run handler
-  const handleRestartRun = () => {
-    if (!engineRef.current) return;
-    engineRef.current.playerPos.set(0, 1.0, 28);
-    engineRef.current.playerStats.hp = engineRef.current.playerStats.maxHp;
-    engineRef.current.playerStats.stamina = engineRef.current.playerStats.maxStamina;
-    engineRef.current.playerStats.healingFlasks = engineRef.current.playerStats.maxHealingFlasks;
-    engineRef.current.setGameState('playing');
-    setGameState('playing');
-    showNotification('Rested at Campfire Haven. Hunt resumed.', 'info');
-  };
-
-  // Save Settings handler
-  const handleUpdateSettings = (newSettings: GameSettings) => {
-    setSettings(newSettings);
-    saveSettings(newSettings);
-  };
-
-  // Import Save handler
-  const handleImportSave = (newSave: SaveData) => {
-    setSaveData(newSave);
-    setPlayerStats(newSave.playerStats);
-    setEquippedWeapon(newSave.inventory.equippedWeapon);
-    setEquippedArmor(newSave.inventory.equippedArmor);
-    setCurrentQuestIndex(newSave.currentQuestIndex);
-    if (engineRef.current) {
-      engineRef.current.playerPos.set(newSave.playerPos.x, newSave.playerPos.y, newSave.playerPos.z);
-      engineRef.current.playerStats = { ...newSave.playerStats };
-      engineRef.current.inventoryMaterials = { ...newSave.inventory.materials };
-      engineRef.current.setEquippedWeapon(newSave.inventory.equippedWeapon);
-      engineRef.current.setEquippedArmor(newSave.inventory.equippedArmor);
-    }
-    showNotification('Save data successfully restored!', 'loot');
-  };
-
-  // Crafting handlers
   const handleCraftSuccess = (updatedMaterials: Record<string, number>, recipe: CraftingRecipe) => {
-    if (!engineRef.current) return;
-    engineRef.current.inventoryMaterials = updatedMaterials;
-    if (recipe.category === 'supplies') {
-      if (recipe.id === 'craft_trap_satchel') {
-        engineRef.current.playerStats.traps = Math.min(
-          engineRef.current.playerStats.maxTraps,
-          engineRef.current.playerStats.traps + 2
+    const engine = engineRef.current;
+    if (!engine) return;
+    engine.inventoryMaterials = updatedMaterials;
+
+    if (recipe.category === 'weapon') {
+      const wId = recipe.targetId as WeaponId;
+      if (!engine.ownedWeapons.includes(wId)) engine.ownedWeapons.push(wId);
+      engine.setEquippedWeapon(wId);
+      setEquippedWeapon(wId);
+    } else if (recipe.category === 'armor') {
+      const aId = recipe.targetId as ArmorId;
+      if (!engine.ownedArmors.includes(aId)) engine.ownedArmors.push(aId);
+      engine.setEquippedArmor(aId);
+      setEquippedArmor(aId);
+    } else if (recipe.category === 'tool') {
+      if (recipe.id === 'craft_vitality_salve') {
+        engine.playerStats.healingFlasks = Math.min(
+          engine.playerStats.maxHealingFlasks,
+          engine.playerStats.healingFlasks + 2
         );
-      } else if (recipe.id === 'craft_healing_brew') {
-        engineRef.current.playerStats.healingFlasks = Math.min(
-          engineRef.current.playerStats.maxHealingFlasks,
-          engineRef.current.playerStats.healingFlasks + 2
+      } else if (recipe.id === 'craft_snare_trap') {
+        engine.playerStats.traps = Math.min(
+          engine.playerStats.maxTraps,
+          engine.playerStats.traps + 2
         );
       }
+      setStats({ ...engine.playerStats });
+    } else if (recipe.category === 'tower') {
+      engine.beaconLit = true;
+      engine.signalTowerProgress = 3;
+      sound.playVictory();
+      setEndStats({
+        time: 360,
+        beastsSlain: engine.beastsHunted.length,
+        materialsGathered: Object.values(updatedMaterials).reduce((a, b) => a + b, 0),
+      });
+      engine.setGameState('victory');
+      setGameState('victory');
     }
-    setPlayerStats({ ...engineRef.current.playerStats });
-    showNotification(`Crafted: ${recipe.name}!`, 'loot');
 
-    // Auto save
-    const snapshot = engineRef.current.getSaveSnapshot();
-    saveGame(snapshot);
-  };
-
-  const handleEquipWeapon = (id: WeaponId) => {
-    if (!engineRef.current) return;
-    engineRef.current.setEquippedWeapon(id);
-    setEquippedWeapon(id);
-  };
-
-  const handleEquipArmor = (id: ArmorId) => {
-    if (!engineRef.current) return;
-    engineRef.current.setEquippedArmor(id);
-    setEquippedArmor(id);
+    const snap = engine.getSaveSnapshot();
+    setSaveData(snap);
+    saveGame(snap);
   };
 
   return (
-    <main className="relative w-screen h-screen overflow-hidden bg-[#0a0a0c]" data-testid="game-main">
-      {/* 3D WebGL Canvas Isolated Mount */}
-      <div
-        ref={mountRef}
-        data-testid="canvas-mount"
-        className="absolute inset-0 w-full h-full cursor-crosshair"
-      />
+    <div className="relative w-screen h-screen overflow-hidden bg-black select-none">
+      {/* 3D WebGL Viewport */}
+      <div ref={containerRef} className="w-full h-full" />
 
-      {/* Title Screen Overlay */}
+      {/* Title Screen */}
       {gameState === 'title' && (
         <TitleScreen
-          onStart={handleStartGame}
-          onOpenSettings={() => setIsSettingsOpen(true)}
+          onStart={handleStartHunt}
+          onOpenSettings={() => setSettingsOpenOnTitle(true)}
         />
       )}
 
-      {/* Playing HUD Overlay */}
-      {gameState === 'playing' && (
+      {/* Active Gameplay HUD */}
+      {gameState === 'playing' && engineRef.current && (
         <HUD
-          stats={playerStats}
+          stats={stats}
           targetBeast={targetBeast}
           currentQuestIndex={currentQuestIndex}
           equippedWeapon={equippedWeapon}
@@ -298,43 +253,97 @@ export default function App() {
           onThrowStone={() => engineRef.current?.throwStone()}
           onToggleFocus={() => engineRef.current?.toggleHunterFocus()}
           onInteract={() => engineRef.current?.handleInteract()}
-          onOpenCrafting={() => setIsCraftingOpen(true)}
-          onOpenBeastopedia={() => setIsBeastopediaOpen(true)}
+          onOpenCrafting={() => setCraftingOpen(true)}
+          onOpenBeastopedia={() => setBeastopediaOpen(true)}
           onPause={() => {
             engineRef.current?.setGameState('paused');
             setGameState('paused');
           }}
-          onVirtualMove={(x, y) => {
+          onVirtualMove={(vx, vy) => {
             if (engineRef.current) {
-              engineRef.current.virtualMoveX = x;
-              engineRef.current.virtualMoveY = y;
+              engineRef.current.virtualMoveX = vx;
+              engineRef.current.virtualMoveY = vy;
             }
           }}
           onLookDelta={(dx, dy) => {
             if (engineRef.current) {
-              engineRef.current.cameraYaw -= dx * 0.0035 * settings.touchSensitivity;
+              engineRef.current.cameraYaw -= dx * 0.0045;
               engineRef.current.cameraPitch = Math.max(
-                0.05,
-                Math.min(1.2, engineRef.current.cameraPitch + dy * 0.0035 * settings.touchSensitivity)
+                0.08,
+                Math.min(1.15, engineRef.current.cameraPitch + dy * 0.0035)
               );
             }
           }}
         />
       )}
 
-      {/* Pause Modal */}
-      {gameState === 'paused' && (
+      {/* Campfire Crafting Modal */}
+      {craftingOpen && engineRef.current && (
+        <CraftingModal
+          materials={engineRef.current.inventoryMaterials}
+          equippedWeapon={equippedWeapon}
+          equippedArmor={equippedArmor}
+          ownedWeapons={engineRef.current.ownedWeapons}
+          ownedArmors={engineRef.current.ownedArmors}
+          onCraftSuccess={handleCraftSuccess}
+          onEquipWeapon={(wId) => {
+            engineRef.current?.setEquippedWeapon(wId);
+            setEquippedWeapon(wId);
+          }}
+          onEquipArmor={(aId) => {
+            engineRef.current?.setEquippedArmor(aId);
+            setEquippedArmor(aId);
+          }}
+          onClose={() => setCraftingOpen(false)}
+        />
+      )}
+
+      {/* 2D Reference Pictures & 3D Atlas Modal */}
+      {beastopediaOpen && (
+        <BeastopediaModal
+          knowledge={beastKnowledge}
+          beastsHunted={engineRef.current?.beastsHunted || saveData.beastsHunted}
+          onClose={() => setBeastopediaOpen(false)}
+        />
+      )}
+
+      {/* Pause & Settings Modal */}
+      {(gameState === 'paused' || settingsOpenOnTitle) && (
         <PauseSettingsModal
           settings={settings}
           currentSave={engineRef.current ? engineRef.current.getSaveSnapshot() : saveData}
-          onResume={handleResumeGame}
-          onRestart={handleRestartRun}
+          onResume={() => {
+            if (settingsOpenOnTitle) {
+              setSettingsOpenOnTitle(false);
+            } else {
+              engineRef.current?.setGameState('playing');
+              setGameState('playing');
+            }
+          }}
+          onRestart={() => {
+            const fresh = getInitialSaveData();
+            saveGame(fresh);
+            setSaveData(fresh);
+            if (engineRef.current) {
+              engineRef.current.respawnAtCampfire();
+              engineRef.current.setGameState('playing');
+            }
+            setSettingsOpenOnTitle(false);
+            setGameState('playing');
+          }}
           onTitle={() => {
+            setSettingsOpenOnTitle(false);
             engineRef.current?.setGameState('title');
             setGameState('title');
           }}
-          onUpdateSettings={handleUpdateSettings}
-          onImportSave={handleImportSave}
+          onUpdateSettings={(newSettings) => {
+            setSettings(newSettings);
+            saveSettings(newSettings);
+          }}
+          onImportSave={(imported) => {
+            setSaveData(imported);
+            saveGame(imported);
+          }}
         />
       )}
 
@@ -342,44 +351,21 @@ export default function App() {
       {(gameState === 'victory' || gameState === 'gameover') && (
         <VictoryDefeatModal
           type={gameState === 'victory' ? 'victory' : 'defeat'}
-          stats={victoryStats}
-          onAction={handleRestartRun}
+          stats={endStats}
+          onAction={() => {
+            if (engineRef.current) {
+              if (gameState === 'gameover') {
+                engineRef.current.respawnAtCampfire();
+              } else {
+                engineRef.current.setGameState('playing');
+              }
+            }
+            setGameState('playing');
+          }}
         />
       )}
-
-      {/* Standalone Settings Modal (from Title Screen) */}
-      {isSettingsOpen && (
-        <PauseSettingsModal
-          settings={settings}
-          currentSave={saveData}
-          onResume={() => setIsSettingsOpen(false)}
-          onRestart={() => setIsSettingsOpen(false)}
-          onTitle={() => setIsSettingsOpen(false)}
-          onUpdateSettings={handleUpdateSettings}
-          onImportSave={handleImportSave}
-        />
-      )}
-
-      {/* Crafting / Workbench Modal */}
-      {isCraftingOpen && (
-        <CraftingModal
-          materials={engineRef.current?.inventoryMaterials || {}}
-          equippedWeapon={equippedWeapon}
-          equippedArmor={equippedArmor}
-          onCraftSuccess={handleCraftSuccess}
-          onEquipWeapon={handleEquipWeapon}
-          onEquipArmor={handleEquipArmor}
-          onClose={() => setIsCraftingOpen(false)}
-        />
-      )}
-
-      {/* Island Beastopedia Modal */}
-      {isBeastopediaOpen && (
-        <BeastopediaModal
-          knowledge={beastKnowledge}
-          onClose={() => setIsBeastopediaOpen(false)}
-        />
-      )}
-    </main>
+    </div>
   );
 }
+
+export default App;

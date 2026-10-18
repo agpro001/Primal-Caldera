@@ -14,47 +14,96 @@ import type {
   WeaponId,
   ArmorId,
   SaveData,
-  TrackClue,
   WeatherType,
-  WeatherCondition,
   BeastKnowledgeLevel,
+  TrackClue,
+  TribalNPC,
 } from '../../types/game.ts';
 import {
+  WEAPON_REGISTRY,
+  ARMOR_REGISTRY,
+  QUEST_CHAIN,
   calculateDamage,
   calculatePlayerDamageTaken,
   calculateStaminaCost,
   isDodgeInvulnerable,
-  createBeastWeakPoints,
-  getBeastDrops,
   applyWeakPointDamage,
-  WEAPON_REGISTRY,
-  ARMOR_REGISTRY,
+  createBeastWeakPoints,
+  computeCameraRelativeMovement,
+  stepAngleShortestArc,
 } from '../logic/rules.ts';
-import { sound } from '../audio/soundEngine.ts';
 import { MaterialCache } from '../graphics/materials.ts';
 import {
   buildHunterModel,
   buildBeastModel,
+  buildTribalNPCModel,
   HunterRig,
   BeastRig,
 } from '../graphics/proceduralModels.ts';
-import { createTerrain, TerrainSystem } from '../graphics/terrain.ts';
-import { WeatherSystem } from './weatherSystem.ts';
+import {
+  createTerrain,
+  createInitialTrackClues,
+  getTerrainBiome,
+  TerrainSystem,
+} from '../graphics/terrain.ts';
+import { sound } from '../audio/soundEngine.ts';
+import { WeatherSystem, WEATHER_CONDITIONS } from './weatherSystem.ts';
 import { TrailSystem } from './trailSystem.ts';
 
 export interface EngineCallbacks {
   onStatsChange: (stats: PlayerStats) => void;
-  onTargetChange: (target: BeastState | null) => void;
-  onNotification: (message: string, type?: 'info' | 'loot' | 'danger') => void;
+  onTargetChange: (beast: BeastState | null) => void;
+  onNotification: (message: string, type: 'info' | 'loot' | 'danger') => void;
   onInteractPrompt: (prompt: string | null) => void;
   onOpenCrafting: () => void;
-  onQuestUpdate: (questIdx: number) => void;
+  onQuestUpdate: (questIndex: number) => void;
   onVictory: (stats: { time: number; beastsSlain: number; materialsGathered: number }) => void;
   onDefeat: () => void;
   onFocusChange: (active: boolean) => void;
-  onWeaponChange: (weapon: WeaponId) => void;
+  onWeaponChange: (weaponId: WeaponId) => void;
   onWeatherChange?: (weather: WeatherType) => void;
   onKnowledgeUpdate?: (knowledge: Record<BeastSpecies, BeastKnowledgeLevel>) => void;
+}
+
+interface ActiveBeastActor {
+  state: BeastState;
+  rig: BeastRig;
+  homeX: number;
+  homeZ: number;
+  patrolAngle: number;
+  chargeDirX: number;
+  chargeDirZ: number;
+  hitThisSwing: boolean;
+}
+
+interface ActiveNPCActor {
+  data: TribalNPC;
+  mesh: THREE.Group;
+}
+
+interface LureStoneProjectile {
+  mesh: THREE.Mesh;
+  vx: number;
+  vy: number;
+  vz: number;
+  age: number;
+  landed: boolean;
+}
+
+interface PlacedTrap {
+  mesh: THREE.Group;
+  x: number;
+  z: number;
+  active: boolean;
+}
+
+interface ParticleBurst {
+  mesh: THREE.Mesh;
+  vx: number;
+  vy: number;
+  vz: number;
+  life: number;
+  maxLife: number;
 }
 
 export class GameEngine {
@@ -65,98 +114,78 @@ export class GameEngine {
   private camera: THREE.PerspectiveCamera;
   private materialCache: MaterialCache;
   private terrain: TerrainSystem;
+  private hunter: HunterRig;
+  private weatherSystem: WeatherSystem;
+  private trailSystem: TrailSystem;
 
-  // Player Entity
-  public hunter: HunterRig;
-  public playerPos: THREE.Vector3 = new THREE.Vector3(0, 1.0, 28);
-  public playerVel: THREE.Vector3 = new THREE.Vector3();
-  public playerRotation: number = 0;
+  // Lights
+  private hemiLight: THREE.HemisphereLight;
+  private sunLight: THREE.DirectionalLight;
+  private focusLight: THREE.PointLight;
+
+  // Game State
+  public gameState: GameState = 'title';
   public playerStats: PlayerStats;
   public equippedWeapon: WeaponId = 'flint_spear';
   public equippedArmor: ArmorId = 'scavenger_rags';
-
-  // Combat & Movement State
-  private playerAction: 'idle' | 'run' | 'attack' | 'dodge' | 'charge' | 'hurt' | 'carve' = 'idle';
-  private actionTimer: number = 0;
-  private attackCombo: number = 1;
-  private chargeDuration: number = 0;
-  private isCharging: boolean = false;
-  private rollProgress: number = 0;
-  private rollDirection: THREE.Vector3 = new THREE.Vector3();
-  private focusVision: boolean = false;
-  private hitstopTimer: number = 0;
-  private cameraShake: number = 0;
-  private timeScale: number = 1.0;
-
-  // Beasts
-  public beasts: Array<{
-    state: BeastState;
-    rig: BeastRig;
-    targetPos: THREE.Vector3;
-    baseSpawn: THREE.Vector3;
-    mesh: THREE.Group;
-    attackTimer: number;
-    recoverTimer: number;
-  }> = [];
-
-  // Traps & Projectiles
-  private activeTraps: Array<{ id: string; mesh: THREE.Group; x: number; y: number; z: number }> = [];
-  private activeProjectiles: Array<{
-    mesh: THREE.Mesh;
-    pos: THREE.Vector3;
-    vel: THREE.Vector3;
-    life: number;
-    damage: number;
-  }> = [];
-
-  // Particles
-  private particles: Array<{
-    mesh: THREE.Mesh;
-    vel: THREE.Vector3;
-    life: number;
-    maxLife: number;
-    color: number;
-  }> = [];
-  private particlePoolGroup: THREE.Group = new THREE.Group();
-
-  // Environment & Lights
-  private sunLight: THREE.DirectionalLight;
-  private hemiLight: THREE.HemisphereLight;
-  private focusLight: THREE.PointLight;
-
-  // Camera Rig
-  public cameraTarget: THREE.Vector3 = new THREE.Vector3();
-  public cameraYaw: number = 0;
-  public cameraPitch: number = 0.28;
-  public cameraDistance: number = 6.5;
-
-  // Input State
-  public keys: Map<string, boolean> = new Map();
-  public mouseDeltaX: number = 0;
-  public mouseDeltaY: number = 0;
-  public isMouseDown: boolean = false;
-  public isRightMouseDown: boolean = false;
-  public virtualMoveX: number = 0;
-  public virtualMoveY: number = 0;
-
-  // Session & Quest State
-  public gameState: GameState = 'title';
-  public currentQuestIndex: number = 0;
-  public beastsHunted: string[] = [];
-  public signalTowerProgress: number = 0;
-  public beaconLit: boolean = false;
   public inventoryMaterials: Record<string, number> = {};
-  public beastKnowledge: Record<BeastSpecies, BeastKnowledgeLevel>;
-  public weatherSystem: WeatherSystem;
-  public trailSystem: TrailSystem;
-  private footprintTimer: number = 0;
-  private runStartTime: number = Date.now();
-  private totalMaterialsGathered: number = 0;
+  public ownedWeapons: WeaponId[] = ['flint_spear'];
+  public ownedArmors: ArmorId[] = ['scavenger_rags'];
+  public currentQuestIndex = 0;
+  public signalTowerProgress = 0;
+  public beaconLit = false;
+  public beastsHunted: BeastSpecies[] = [];
+  public beastKnowledge: Record<BeastSpecies, BeastKnowledgeLevel> = {
+    raptor: 'tracked',
+    brontoshell: 'tracked',
+    thunderhorn: 'tracked',
+    frostfang: 'tracked',
+    snapjaw: 'tracked',
+    caldera_titan: 'tracked',
+  };
 
-  // Animation Loop Handles
-  private animFrameId: number | null = null;
-  private lastTime: number = 0;
-  private walkCycleTimer: number = 0;
+  // Player Transform & Movement
+  public playerPos = new THREE.Vector3(0, 1.8, 28);
+  public playerRotation = 0;
+  public cameraYaw = 0;
+  public cameraPitch = 0.36;
+  private cameraDistance = 7.8;
+  private cameraShakeIntensity = 0;
+
+  // Player Action States
+  private keysPressed = new Set<string>();
+  public virtualMoveX = 0;
+  public virtualMoveY = 0;
+  private isDodging = false;
+  private dodgeTimer = 0;
+  private dodgeDirX = 0;
+  private dodgeDirZ = 1;
+  private isAttacking = false;
+  private isHeavyAttack = false;
+  private attackTimer = 0;
+  private isChargingHeavy = false;
+  private heavyChargeTime = 0;
+  public focusVisionActive = false;
+  private focusTimer = 0;
+
+  // Entities
+  public beasts: ActiveBeastActor[] = [];
+  public npcs: ActiveNPCActor[] = [];
+  private clues: { data: TrackClue; mesh: THREE.Group }[] = [];
+  private traps: PlacedTrap[] = [];
+  private projectiles: LureStoneProjectile[] = [];
+  private particles: ParticleBurst[] = [];
+  private particlePoolGroup = new THREE.Group();
+
+  // Loop
+  private animFrameId = 0;
+  private lastTime = 0;
+  private elapsedRunTime = 0;
+  private totalMaterialsGathered = 0;
+  private titleOrbitAngle = 0;
+  private isPointerDown = false;
+  private lastPointerX = 0;
+  private lastPointerY = 0;
 
   constructor(container: HTMLElement, saveData: SaveData, callbacks: EngineCallbacks) {
     this.container = container;
@@ -164,17 +193,23 @@ export class GameEngine {
     this.playerStats = { ...saveData.playerStats };
     this.equippedWeapon = saveData.inventory.equippedWeapon;
     this.equippedArmor = saveData.inventory.equippedArmor;
+    this.ownedWeapons = [...saveData.inventory.weapons];
+    this.ownedArmors = [...saveData.inventory.armors];
     this.inventoryMaterials = { ...saveData.inventory.materials };
     this.currentQuestIndex = saveData.currentQuestIndex;
     this.signalTowerProgress = saveData.signalTowerProgress;
     this.beaconLit = saveData.beaconLit;
     this.beastsHunted = [...saveData.beastsHunted];
-    this.beastKnowledge = saveData.beastKnowledge || {
-      raptor: 'tracked',
-      brontoshell: 'tracked',
-      thunderhorn: 'tracked',
-      caldera_titan: 'tracked',
-    };
+    this.beastKnowledge = saveData.beastKnowledge
+      ? { ...saveData.beastKnowledge }
+      : {
+          raptor: 'tracked',
+          brontoshell: 'tracked',
+          thunderhorn: 'tracked',
+          frostfang: 'tracked',
+          snapjaw: 'tracked',
+          caldera_titan: 'tracked',
+        };
 
     this.weatherSystem = new WeatherSystem();
     if (saveData.currentWeather) {
@@ -202,46 +237,49 @@ export class GameEngine {
     // Scene
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x1a1820);
-    this.scene.fog = new THREE.FogExp2(0x282024, 0.012);
+    this.scene.fog = new THREE.FogExp2(0x282024, 0.0085);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(
       56,
       container.clientWidth / container.clientHeight,
       0.1,
-      350
+      460
     );
 
     // PMREM Environment
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.28;
     pmrem.dispose();
 
     // Lighting
-    this.hemiLight = new THREE.HemisphereLight(0xffedd5, 0x1f2937, 0.65);
+    this.hemiLight = new THREE.HemisphereLight(0xffedd5, 0x1f2937, 0.55);
     this.scene.add(this.hemiLight);
 
-    this.sunLight = new THREE.DirectionalLight(0xfff7ed, 1.4);
-    this.sunLight.position.set(45, 60, 40);
+    this.sunLight = new THREE.DirectionalLight(0xfff7ed, 1.35);
+    this.sunLight.position.set(45, 65, 40);
     this.sunLight.castShadow = !isHeadless;
     this.sunLight.shadow.mapSize.width = 1024;
     this.sunLight.shadow.mapSize.height = 1024;
     this.sunLight.shadow.bias = -0.0005;
     this.sunLight.shadow.normalBias = 0.02;
-    this.sunLight.shadow.camera.left = -60;
-    this.sunLight.shadow.camera.right = 60;
-    this.sunLight.shadow.camera.top = 60;
-    this.sunLight.shadow.camera.bottom = -60;
+    this.sunLight.shadow.camera.left = -75;
+    this.sunLight.shadow.camera.right = 75;
+    this.sunLight.shadow.camera.top = 75;
+    this.sunLight.shadow.camera.bottom = -75;
     this.scene.add(this.sunLight);
 
     // Focus Light for Hunter Instinct vision
-    this.focusLight = new THREE.PointLight(0xf59e0b, 0, 15);
+    this.focusLight = new THREE.PointLight(0xf59e0b, 0, 16);
     this.scene.add(this.focusLight);
 
-    // Materials & Terrain
+    // Materials & Terrain (including 3D Ocean, Winding River, Cold Snow Mountains, Trees, Stones, Shrubs)
     this.materialCache = new MaterialCache();
     this.terrain = createTerrain(this.materialCache);
     this.scene.add(this.terrain.mesh);
+    this.scene.add(this.terrain.oceanMesh);
+    this.scene.add(this.terrain.riverMesh);
     this.scene.add(this.terrain.lavaFlowMesh);
     this.scene.add(this.terrain.foliageGroup);
     this.scene.add(this.terrain.campGroup);
@@ -255,11 +293,18 @@ export class GameEngine {
     this.hunter = buildHunterModel(this.materialCache);
     this.hunter.updateWeapon(this.equippedWeapon);
     this.hunter.updateArmor(this.equippedArmor);
-    this.playerPos.set(saveData.playerPos.x, this.terrain.getHeight(saveData.playerPos.x, saveData.playerPos.z), saveData.playerPos.z);
+    this.playerPos.set(
+      saveData.playerPos.x,
+      this.terrain.getHeight(saveData.playerPos.x, saveData.playerPos.z),
+      saveData.playerPos.z
+    );
     this.hunter.root.position.copy(this.playerPos);
     this.scene.add(this.hunter.root);
 
-    // Initialize Colossal Beasts
+    // Initialize Tribal Characters (NPCs)
+    this.initNPCs();
+
+    // Initialize All 6 Prehistoric Beasts
     this.initBeasts();
 
     // Pre-allocate particle geometries
@@ -271,10 +316,97 @@ export class GameEngine {
     // Bind event listeners
     this.bindEvents();
 
+    // Expose deterministic test & inspection hooks
+    (window as any).__PRIMAL_ENGINE__ = this;
+    (window as any).__gameTest = {
+      getState: () => ({
+        gameState: this.gameState,
+        playerPos: { x: this.playerPos.x, y: this.playerPos.y, z: this.playerPos.z },
+        playerRotation: this.playerRotation,
+        cameraYaw: this.cameraYaw,
+        virtualMove: { x: this.virtualMoveX, y: this.virtualMoveY },
+        biome: getTerrainBiome(this.playerPos.x, this.playerPos.z),
+        beasts: this.beasts.map((b) => ({
+          id: b.state.id,
+          species: b.state.species,
+          name: b.state.name,
+          biome: b.state.biome,
+          x: b.state.x,
+          z: b.state.z,
+          hp: b.state.hp,
+        })),
+        npcs: this.npcs.map((n) => ({
+          id: n.data.id,
+          name: n.data.name,
+          x: n.data.x,
+          z: n.data.z,
+        })),
+      }),
+      setVirtualMove: (x: number, y: number) => {
+        this.virtualMoveX = x;
+        this.virtualMoveY = y;
+      },
+      teleport: (x: number, z: number, yaw = 0) => {
+        this.playerPos.set(x, this.terrain.getHeight(x, z), z);
+        this.hunter.root.position.copy(this.playerPos);
+        this.cameraYaw = yaw;
+      },
+    };
+
     // Start loop
     this.lastTime = performance.now();
     this.tick = this.tick.bind(this);
     this.animFrameId = requestAnimationFrame(this.tick);
+  }
+
+  private initNPCs() {
+    const npcConfigs: TribalNPC[] = [
+      {
+        id: 'chief_kael',
+        name: 'Elder Chief Kael',
+        role: 'Tribal Chieftain & Lorekeeper',
+        x: -3.2,
+        y: 0,
+        z: 24.2,
+        rotation: 0.45,
+        biome: 'jungle',
+        greeting: 'Chief Kael: "Walk with the wind, Koa! East lie the Cold Snow Mountains & Frostfang Mammoth; north flows the Crystal River where the Snapjaw Leviathan lurks."',
+        giftMaterial: { id: 'beast_bone', count: 3, claimed: false },
+      },
+      {
+        id: 'smith_torak',
+        name: 'Forge-Master Torak',
+        role: 'Obsidian & Bone Weaponsmith',
+        x: 3.2,
+        y: 0,
+        z: 24.5,
+        rotation: -0.5,
+        biome: 'jungle',
+        greeting: 'Torak: "Bring me Raptor Claws, Brontoshell Plates, or Frostfang Ivory and I will forge you weapons fit for the Caldera Titan!"',
+        giftMaterial: { id: 'obsidian_shard', count: 2, claimed: false },
+      },
+      {
+        id: 'scout_lyra',
+        name: 'Scout Lyra',
+        role: 'River Pathfinder & Herbalist',
+        x: -13.5,
+        y: 0,
+        z: 16.8,
+        rotation: 2.6,
+        biome: 'river',
+        greeting: 'Scout Lyra: "Watch the turquoise river shallows! The River Snapjaw Leviathan strikes from the water, and upstream in the snow peaks roams the Frostfang Mammoth."',
+        giftMaterial: { id: 'sun_herb', count: 3, claimed: false },
+      },
+    ];
+
+    npcConfigs.forEach((cfg) => {
+      cfg.y = this.terrain.getHeight(cfg.x, cfg.z);
+      const mesh = buildTribalNPCModel(cfg.id, this.materialCache);
+      mesh.position.set(cfg.x, cfg.y, cfg.z);
+      mesh.rotation.y = cfg.rotation;
+      this.scene.add(mesh);
+      this.npcs.push({ data: cfg, mesh });
+    });
   }
 
   private initBeasts() {
@@ -293,39 +425,59 @@ export class GameEngine {
         species: 'raptor',
         name: 'Razor-Crest Raptor Alpha',
         title: 'Pack Terror of the Ravines',
-        x: -28,
-        z: 48,
+        x: -26,
+        z: 46,
         hp: 240,
         biome: 'jungle',
+      },
+      {
+        id: 'snapjaw_leviathan',
+        species: 'snapjaw',
+        name: 'River Snapjaw Leviathan',
+        title: 'Amphibious Predator of River & Ocean',
+        x: -22,
+        z: 14,
+        hp: 340,
+        biome: 'river',
       },
       {
         id: 'bronto_behemoth',
         species: 'brontoshell',
         name: 'Gilded Brontoshell Behemoth',
         title: 'Ancient Carapace of the Black Coast',
-        x: 48,
-        z: 42,
+        x: 42,
+        z: 38,
         hp: 380,
         biome: 'coast',
       },
       {
+        id: 'frostfang_mammoth',
+        species: 'frostfang',
+        name: 'Frostfang Glacial Mammoth',
+        title: 'Colossus of the Cold Snow Mountains',
+        x: 58,
+        z: -18,
+        hp: 490,
+        biome: 'snow',
+      },
+      {
         id: 'thunderhorn_prime',
         species: 'thunderhorn',
-        name: 'Thunderhorn Prime',
-        title: 'Earth-Shaker of Steaming Springs',
-        x: -42,
-        z: -18,
-        hp: 520,
+        name: 'Thunderhorn Ceratopsian Prime',
+        title: 'Warden of the Geothermal Springs',
+        x: -44,
+        z: -16,
+        hp: 460,
         biome: 'springs',
       },
       {
         id: 'caldera_titan_boss',
         species: 'caldera_titan',
-        name: 'Ignis Titanus Caldera',
-        title: 'Apex Sovereign of the Volcanic Core',
+        name: 'Ignis-Rex, The Caldera Titan',
+        title: 'Sovereign of the Molten Summit',
         x: 0,
-        z: -88,
-        hp: 850,
+        z: -62,
+        hp: 680,
         biome: 'caldera',
       },
     ];
@@ -334,77 +486,103 @@ export class GameEngine {
       const rig = buildBeastModel(cfg.species, this.materialCache);
       const y = this.terrain.getHeight(cfg.x, cfg.z);
       rig.root.position.set(cfg.x, y, cfg.z);
+      this.scene.add(rig.root);
+
+      const weakPoints = createBeastWeakPoints(cfg.species);
+      weakPoints.forEach((wp) => {
+        const indicator = new THREE.Mesh(
+          new THREE.SphereGeometry(wp.radius * 0.45, 10, 10),
+          this.materialCache.weakPointGlow
+        );
+        indicator.position.set(wp.localOffset.x, wp.localOffset.y, wp.localOffset.z);
+        indicator.visible = false;
+        rig.root.add(indicator);
+        rig.weakPointIndicators.set(wp.id, indicator);
+      });
 
       const state: BeastState = {
         id: cfg.id,
         species: cfg.species,
         name: cfg.name,
         title: cfg.title,
+        biome: cfg.biome,
+        hp: cfg.hp,
+        maxHp: cfg.hp,
+        stamina: 100,
+        maxStamina: 100,
+        enraged: false,
+        aiState: 'patrol',
+        stateTimer: 0,
         x: cfg.x,
         y,
         z: cfg.z,
-        rotation: Math.random() * Math.PI * 2,
-        hp: cfg.hp,
-        maxHp: cfg.hp,
-        enraged: false,
-        staggered: false,
-        staggerTimer: 0,
-        attackCooldown: 2.0,
-        state: 'patrol',
-        currentAttackName: 'Prowl',
-        telegraphProgress: 0,
-        weakPoints: createBeastWeakPoints(cfg.species),
-        drops: getBeastDrops(cfg.species),
-        biome: cfg.biome,
+        rotation: 0,
+        weakPoints,
         carved: false,
-        alertLevel: 0,
+        snaredTimer: 0,
       };
 
-      this.scene.add(rig.root);
       this.beasts.push({
         state,
         rig,
-        targetPos: new THREE.Vector3(cfg.x, y, cfg.z),
-        baseSpawn: new THREE.Vector3(cfg.x, y, cfg.z),
-        mesh: rig.root,
-        attackTimer: 0,
-        recoverTimer: 0,
+        homeX: cfg.x,
+        homeZ: cfg.z,
+        patrolAngle: 0,
+        chargeDirX: 0,
+        chargeDirZ: 1,
+        hitThisSwing: false,
       });
+    });
+
+    // Track Clues
+    const initialClues = createInitialTrackClues();
+    initialClues.forEach((clue) => {
+      const group = new THREE.Group();
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.65, 0.08, 8, 16),
+        this.materialCache.focusClueGlow
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.15;
+      group.add(ring);
+      group.position.set(clue.x, clue.y, clue.z);
+      this.terrain.clueGroup.add(group);
+      this.clues.push({ data: clue, mesh: group });
     });
   }
 
   private initParticles() {
-    const pGeo = new THREE.DodecahedronGeometry(0.08);
-    const pMat = new THREE.MeshBasicMaterial({ color: 0xff7700 });
+    const geo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
     for (let i = 0; i < 40; i++) {
-      const mesh = new THREE.Mesh(pGeo, pMat.clone());
+      const mat = new THREE.MeshBasicMaterial({ color: 0xf97316 });
+      const mesh = new THREE.Mesh(geo, mat);
       mesh.visible = false;
       this.particlePoolGroup.add(mesh);
       this.particles.push({
         mesh,
-        vel: new THREE.Vector3(),
+        vx: 0,
+        vy: 0,
+        vz: 0,
         life: 0,
-        maxLife: 1.0,
-        color: 0xff7700,
+        maxLife: 0.5,
       });
     }
   }
 
-  public spawnParticles(x: number, y: number, z: number, count: number, color: number, speed: number = 2.5) {
+  public spawnParticles(x: number, y: number, z: number, colorHex: number, count = 8) {
     let spawned = 0;
-    for (let i = 0; i < this.particles.length; i++) {
-      const p = this.particles[i];
+    for (const p of this.particles) {
       if (p.life <= 0) {
         p.mesh.position.set(x, y, z);
-        p.vel.set(
-          (Math.random() - 0.5) * speed,
-          Math.random() * speed + 0.5,
-          (Math.random() - 0.5) * speed
-        );
-        p.life = 0.4 + Math.random() * 0.4;
-        p.maxLife = p.life;
-        (p.mesh.material as THREE.MeshBasicMaterial).color.setHex(color);
+        (p.mesh.material as THREE.MeshBasicMaterial).color.setHex(colorHex);
         p.mesh.visible = true;
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 2 + Math.random() * 4;
+        p.vx = Math.cos(angle) * speed;
+        p.vy = 2 + Math.random() * 4;
+        p.vz = Math.sin(angle) * speed;
+        p.maxLife = 0.4 + Math.random() * 0.3;
+        p.life = p.maxLife;
         spawned++;
         if (spawned >= count) break;
       }
@@ -412,1050 +590,372 @@ export class GameEngine {
   }
 
   private bindEvents() {
-    const onKeyDown = (e: KeyboardEvent) => {
-      this.keys.set(e.code, true);
-
-      if (e.code === 'KeyF') {
-        this.toggleHunterFocus();
-      } else if (e.code === 'KeyE') {
-        this.handleInteract();
-      } else if (e.code === 'KeyQ') {
-        this.useHealFlask();
-      } else if (e.code === 'KeyT') {
-        this.placeTrap();
-      } else if (e.code === 'KeyR') {
-        this.throwStone();
-      }
-    };
-
-    const onKeyUp = (e: KeyboardEvent) => {
-      this.keys.set(e.code, false);
-    };
-
-    const onMouseDown = (e: MouseEvent) => {
-      if (this.gameState !== 'playing') return;
-      sound.triggerUserInteraction();
-      if (e.button === 0) {
-        this.isMouseDown = true;
-        this.startSpearAttack();
-      } else if (e.button === 2) {
-        this.isRightMouseDown = true;
-        this.isCharging = true;
-      }
-    };
-
-    const onMouseUp = (e: MouseEvent) => {
-      if (e.button === 0) {
-        this.isMouseDown = false;
-      } else if (e.button === 2) {
-        this.isRightMouseDown = false;
-        if (this.isCharging) {
-          this.releaseHeavyThrust();
-          this.isCharging = false;
-        }
-      }
-    };
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (document.pointerLockElement === this.renderer.domElement) {
-        this.cameraYaw -= e.movementX * 0.0022;
-        this.cameraPitch = Math.max(0.05, Math.min(1.2, this.cameraPitch + e.movementY * 0.0022));
-      }
-    };
-
-    const onBlur = () => {
-      this.keys.clear();
-      this.isMouseDown = false;
-      this.isRightMouseDown = false;
-      this.isCharging = false;
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mouseup', onMouseUp);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('blur', onBlur);
-
-    // Right-click prevent default context menu in game
+    window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('keyup', this.onKeyUp);
+    this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
+    window.addEventListener('pointermove', this.onPointerMove);
+    window.addEventListener('pointerup', this.onPointerUp);
     this.renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
-
-    // Click canvas to request pointer lock
-    this.renderer.domElement.addEventListener('click', () => {
-      if (this.gameState === 'playing' && document.pointerLockElement !== this.renderer.domElement) {
-        this.renderer.domElement.requestPointerLock?.();
-      }
-    });
   }
 
-  public setGameState(state: GameState) {
-    this.gameState = state;
-    document.body.dataset.state = state;
-    if (state !== 'playing' && document.pointerLockElement) {
-      document.exitPointerLock?.();
+  private onKeyDown = (e: KeyboardEvent) => {
+    this.keysPressed.add(e.code);
+    if (this.gameState !== 'playing') return;
+
+    if (e.code === 'Space') {
+      e.preventDefault();
+      this.startDodgeRoll();
+    } else if (e.code === 'KeyF') {
+      this.toggleHunterFocus();
+    } else if (e.code === 'KeyQ') {
+      this.useHealFlask();
+    } else if (e.code === 'KeyT') {
+      this.placeTrap();
+    } else if (e.code === 'KeyR') {
+      this.throwStone();
+    } else if (e.code === 'KeyE') {
+      this.handleInteract();
     }
-  }
+  };
 
-  public toggleHunterFocus() {
-    this.focusVision = !this.focusVision;
-    sound.playFocusToggle(this.focusVision);
-    this.focusLight.intensity = this.focusVision ? 2.5 : 0;
-    this.callbacks.onFocusChange(this.focusVision);
+  private onKeyUp = (e: KeyboardEvent) => {
+    this.keysPressed.delete(e.code);
+  };
 
-    // Reveal glowing scent trails on clues
-    this.terrain.clueGroup.children.forEach((c) => {
-      c.visible = true;
-      c.scale.setScalar(this.focusVision ? 1.4 : 1.0);
-    });
+  private onPointerDown = (e: PointerEvent) => {
+    sound.triggerUserInteraction();
+    if (this.gameState !== 'playing') return;
+    if (e.button === 0) {
+      this.isPointerDown = true;
+      this.lastPointerX = e.clientX;
+      this.lastPointerY = e.clientY;
+      this.startSpearAttack();
+    } else if (e.button === 2) {
+      this.isChargingHeavy = true;
+      this.heavyChargeTime = 0;
+    }
+  };
 
-    // Reveal beast weak point halos
-    this.beasts.forEach((b) => {
-      b.rig.weakPointMeshes.forEach((m) => {
-        m.scale.setScalar(this.focusVision ? 1.5 : 1.0);
-      });
-    });
+  private onPointerMove = (e: PointerEvent) => {
+    if (this.gameState !== 'playing') return;
+    if (this.isPointerDown || document.pointerLockElement === this.renderer.domElement) {
+      const dx = e.movementX || e.clientX - this.lastPointerX;
+      const dy = e.movementY || e.clientY - this.lastPointerY;
+      this.lastPointerX = e.clientX;
+      this.lastPointerY = e.clientY;
+      this.cameraYaw -= dx * 0.0045;
+      this.cameraPitch = Math.max(0.08, Math.min(1.15, this.cameraPitch + dy * 0.0035));
+    }
+  };
 
-    this.callbacks.onNotification(
-      this.focusVision ? "Hunter's Focus Active: Beast weak points and scent trails revealed" : "Hunter's Focus Deactivated",
-      'info'
-    );
-  }
+  private onPointerUp = (e: PointerEvent) => {
+    if (e.button === 0) {
+      this.isPointerDown = false;
+    } else if (e.button === 2 && this.isChargingHeavy) {
+      this.releaseHeavyThrust();
+    }
+  };
 
   public startSpearAttack() {
-    if (this.playerAction !== 'idle' && this.playerAction !== 'run') return;
-    const cost = calculateStaminaCost('light', this.equippedWeapon);
+    if (this.isAttacking || this.isDodging) return;
+    const weapon = WEAPON_REGISTRY[this.equippedWeapon];
+    const armor = ARMOR_REGISTRY[this.equippedArmor];
+    const cost = calculateStaminaCost('light', weapon, armor);
     if (this.playerStats.stamina < cost) {
-      this.callbacks.onNotification('Exhausted! Recover stamina', 'danger');
+      this.callbacks.onNotification('Low Stamina!', 'danger');
       return;
     }
-
     this.playerStats.stamina -= cost;
-    this.playerAction = 'attack';
-    this.actionTimer = 0.38;
+    this.isAttacking = true;
+    this.isHeavyAttack = false;
+    this.attackTimer = 0.34;
+    this.beasts.forEach((b) => (b.hitThisSwing = false));
     sound.playSpearSwing(false);
-
-    // Check hit immediately on active forward hitbox
-    this.checkPlayerAttackHit(false);
-
-    // Combo progression
-    this.attackCombo = this.attackCombo === 1 ? 2 : this.attackCombo === 2 ? 3 : 1;
+    this.callbacks.onStatsChange(this.playerStats);
   }
 
   public releaseHeavyThrust() {
-    if (this.playerAction !== 'idle' && this.playerAction !== 'run') return;
-    const cost = calculateStaminaCost('heavy', this.equippedWeapon);
+    this.isChargingHeavy = false;
+    if (this.isAttacking || this.isDodging) return;
+    const weapon = WEAPON_REGISTRY[this.equippedWeapon];
+    const armor = ARMOR_REGISTRY[this.equippedArmor];
+    const cost = calculateStaminaCost('heavy', weapon, armor);
     if (this.playerStats.stamina < cost) {
       this.callbacks.onNotification('Not enough stamina for Heavy Thrust!', 'danger');
       return;
     }
-
     this.playerStats.stamina -= cost;
-    this.playerAction = 'attack';
-    this.actionTimer = 0.55;
+    this.isAttacking = true;
+    this.isHeavyAttack = true;
+    this.attackTimer = 0.48;
+    this.beasts.forEach((b) => (b.hitThisSwing = false));
     sound.playSpearSwing(true);
-    this.checkPlayerAttackHit(true);
-    this.attackCombo = 1;
+    this.callbacks.onStatsChange(this.playerStats);
   }
 
   public startDodgeRoll() {
-    if (this.playerAction === 'dodge' || this.playerAction === 'hurt') return;
-    const cost = calculateStaminaCost('dodge', this.equippedWeapon);
-    if (this.playerStats.stamina < cost) {
-      this.callbacks.onNotification('Too exhausted to dodge!', 'danger');
-      return;
-    }
+    if (this.isDodging) return;
+    const weapon = WEAPON_REGISTRY[this.equippedWeapon];
+    const armor = ARMOR_REGISTRY[this.equippedArmor];
+    const cost = calculateStaminaCost('dodge', weapon, armor);
+    if (this.playerStats.stamina < cost) return;
 
     this.playerStats.stamina -= cost;
-    this.playerAction = 'dodge';
-    this.actionTimer = 0.62;
-    this.rollProgress = 0;
-
-    // Determine roll direction based on input or current forward
-    const moveX = (this.keys.get('KeyD') ? 1 : 0) - (this.keys.get('KeyA') ? 1 : 0) + this.virtualMoveX;
-    const moveZ = (this.keys.get('KeyS') ? 1 : 0) - (this.keys.get('KeyW') ? 1 : 0) + this.virtualMoveY;
-
-    if (Math.hypot(moveX, moveZ) > 0.1) {
-      const angle = this.cameraYaw + Math.atan2(moveX, moveZ);
-      this.rollDirection.set(Math.sin(angle), 0, Math.cos(angle)).normalize();
-    } else {
-      this.rollDirection.set(Math.sin(this.playerRotation), 0, Math.cos(this.playerRotation)).normalize();
-    }
-
-    sound.playDodge();
-    this.spawnParticles(this.playerPos.x, this.playerPos.y + 0.2, this.playerPos.z, 6, 0xd4d4d8, 1.2);
+    this.isDodging = true;
+    this.isAttacking = false;
+    this.dodgeTimer = 0.46;
+    this.dodgeDirX = Math.sin(this.playerRotation);
+    this.dodgeDirZ = Math.cos(this.playerRotation);
+    sound.playDodgeRoll();
+    this.callbacks.onStatsChange(this.playerStats);
   }
 
   public useHealFlask() {
     if (this.playerStats.healingFlasks <= 0) {
-      this.callbacks.onNotification('No healing salves remaining! Craft more at camp.', 'danger');
+      this.callbacks.onNotification('No Vitality Salves remaining! Craft more at camp.', 'danger');
       return;
     }
-    if (this.playerStats.hp >= this.playerStats.maxHp) {
-      this.callbacks.onNotification('Vitality already full!', 'info');
-      return;
-    }
-
+    if (this.playerStats.hp >= this.playerStats.maxHp) return;
     this.playerStats.healingFlasks--;
-    this.playerStats.hp = Math.min(this.playerStats.maxHp, this.playerStats.hp + this.playerStats.flaskHealAmount);
+    this.playerStats.hp = Math.min(this.playerStats.maxHp, this.playerStats.hp + 65);
     sound.playHeal();
-    this.spawnParticles(this.playerPos.x, this.playerPos.y + 1.2, this.playerPos.z, 12, 0x10b981, 1.8);
-    this.callbacks.onNotification(`Restored ${this.playerStats.flaskHealAmount} HP!`, 'loot');
+    this.spawnParticles(this.playerPos.x, this.playerPos.y + 1, this.playerPos.z, 0x22c55e, 12);
+    this.callbacks.onNotification('Used Vitality Salve (+65 HP)', 'loot');
     this.callbacks.onStatsChange(this.playerStats);
   }
 
   public placeTrap() {
     if (this.playerStats.traps <= 0) {
-      this.callbacks.onNotification('No pitfall traps in satchel! Craft them at Campfire.', 'danger');
+      this.callbacks.onNotification('No Sinew Snare Traps remaining!', 'danger');
       return;
     }
-
     this.playerStats.traps--;
-    const tGroup = new THREE.Group();
-    const trapRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.8, 1.2, 8),
-      new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.9 })
+    const trapGroup = new THREE.Group();
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(1.1, 0.08, 8, 18),
+      this.materialCache.boneMaterial
     );
-    trapRing.rotation.x = -Math.PI / 2;
-    tGroup.add(trapRing);
-
-    // Spikes
-    for (let i = 0; i < 4; i++) {
-      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.45, 4), this.materialCache.boneMaterial);
-      spike.position.set(Math.cos((i / 4) * Math.PI * 2) * 0.9, 0.2, Math.sin((i / 4) * Math.PI * 2) * 0.9);
-      tGroup.add(spike);
-    }
-
-    const y = this.terrain.getHeight(this.playerPos.x, this.playerPos.z) + 0.05;
-    tGroup.position.set(this.playerPos.x, y, this.playerPos.z);
-    this.scene.add(tGroup);
-
-    this.activeTraps.push({
-      id: `trap_${Date.now()}`,
-      mesh: tGroup,
-      x: this.playerPos.x,
-      y,
-      z: this.playerPos.z,
-    });
-
-    sound.playTrapSnap();
-    this.callbacks.onNotification('Shock-Vine Pitfall Trap placed!', 'info');
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.12;
+    trapGroup.add(ring);
+    trapGroup.position.set(this.playerPos.x, this.playerPos.y, this.playerPos.z);
+    this.scene.add(trapGroup);
+    this.traps.push({ mesh: trapGroup, x: this.playerPos.x, z: this.playerPos.z, active: true });
+    sound.playTrapPlace();
+    this.callbacks.onNotification('Placed Sinew Snare Trap!', 'info');
     this.callbacks.onStatsChange(this.playerStats);
   }
 
   public throwStone() {
-    if (this.playerStats.stones <= 0) {
-      this.callbacks.onNotification('No throwing stones remaining!', 'info');
-      return;
-    }
+    if (this.playerStats.lureStones <= 0) return;
+    this.playerStats.lureStones--;
+    const stoneMesh = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.18, 0),
+      this.materialCache.stoneMaterial
+    );
+    stoneMesh.position.set(this.playerPos.x, this.playerPos.y + 1.4, this.playerPos.z);
+    this.scene.add(stoneMesh);
 
-    this.playerStats.stones--;
-    const rockGeo = new THREE.DodecahedronGeometry(0.18);
-    const rockMesh = new THREE.Mesh(rockGeo, this.materialCache.stoneMaterial);
-    rockMesh.position.set(this.playerPos.x, this.playerPos.y + 1.4, this.playerPos.z);
-    this.scene.add(rockMesh);
-
-    const fwd = new THREE.Vector3(Math.sin(this.cameraYaw), 0.22, Math.cos(this.cameraYaw)).normalize();
-    const vel = fwd.multiplyScalar(22);
-
-    this.activeProjectiles.push({
-      mesh: rockMesh,
-      pos: rockMesh.position.clone(),
-      vel,
-      life: 2.2,
-      damage: 15,
+    const forwardX = Math.sin(this.playerRotation);
+    const forwardZ = Math.cos(this.playerRotation);
+    this.projectiles.push({
+      mesh: stoneMesh,
+      vx: forwardX * 16,
+      vy: 6.5,
+      vz: forwardZ * 16,
+      age: 0,
+      landed: false,
     });
-
-    sound.playSpearSwing(false);
     this.callbacks.onStatsChange(this.playerStats);
   }
 
-  private checkPlayerAttackHit(isHeavy: boolean) {
-    const weapon = WEAPON_REGISTRY[this.equippedWeapon] || WEAPON_REGISTRY.flint_spear;
-    const reach = weapon.range;
-
-    // Check against each alive beast
-    for (const b of this.beasts) {
-      if (b.state.hp <= 0) continue;
-
-      const beastDist = Math.hypot(b.state.x - this.playerPos.x, b.state.z - this.playerPos.z);
-      if (beastDist > reach + 2.5) continue;
-
-      // Check facing angle
-      const toBeast = new THREE.Vector3(b.state.x - this.playerPos.x, 0, b.state.z - this.playerPos.z).normalize();
-      const playerFwd = new THREE.Vector3(Math.sin(this.playerRotation), 0, Math.cos(this.playerRotation)).normalize();
-      const dot = playerFwd.dot(toBeast);
-
-      if (dot > 0.45 || beastDist < 2.0) {
-        // Successful hit!
-        let isWeakPointHit = false;
-        let weakMultiplier = 1.0;
-
-        // Check weak point proximity
-        for (const wp of b.state.weakPoints) {
-          if (!wp.broken) {
-            // If facing the weak point sector
-            isWeakPointHit = true;
-            weakMultiplier = wp.damageMultiplier;
-            const res = applyWeakPointDamage(wp, isHeavy ? 60 : 35);
-            wp.broken = res.weakPoint.broken;
-            wp.accumulatedDamage = res.weakPoint.accumulatedDamage;
-            if (res.brokenNow) {
-              b.state.staggered = true;
-              b.state.staggerTimer = 2.8;
-              sound.playBeastRoar(b.state.species, true);
-              this.callbacks.onNotification(`${b.state.name}'s ${wp.name} BROKEN! Staggered!`, 'loot');
-            }
-            break;
-          }
-        }
-
-        const calc = calculateDamage(
-          this.playerStats.attackPower,
-          weapon.damage,
-          isHeavy,
-          isWeakPointHit,
-          weakMultiplier,
-          b.state.enraged ? 15 : 8,
-          this.playerStats.critChance + weapon.critBonus
-        );
-
-        b.state.hp = Math.max(0, b.state.hp - calc.damage);
-        b.state.alertLevel = 1.0;
-
-        // Visual and Audio feedback
-        sound.playHit(calc.isWeakPoint, calc.isCrit);
-        b.rig.setHitFlash(true);
-        setTimeout(() => b.rig.setHitFlash(false), 80);
-
-        this.spawnParticles(
-          b.state.x + (Math.random() - 0.5) * 1.5,
-          b.state.y + 1.2,
-          b.state.z + (Math.random() - 0.5) * 1.5,
-          calc.isCrit || calc.isWeakPoint ? 18 : 8,
-          calc.isWeakPoint ? 0xf59e0b : 0xdc2626,
-          3.2
-        );
-
-        // Simulation Hitstop
-        this.hitstopTimer = calc.isCrit || isHeavy ? 0.07 : 0.035;
-        this.cameraShake = calc.isCrit || isHeavy ? 0.45 : 0.2;
-
-        // Enrage threshold check (< 40% HP)
-        if (b.state.hp < b.state.maxHp * 0.4 && !b.state.enraged) {
-          b.state.enraged = true;
-          b.rig.setEnraged(true);
-          sound.playBeastRoar(b.state.species, true);
-          this.callbacks.onNotification(`${b.state.name} ENRAGED! Magma surges through its veins!`, 'danger');
-        }
-
-        // Update Beastopedia to observed
-        if (this.beastKnowledge[b.state.species] === 'unknown' || this.beastKnowledge[b.state.species] === 'tracked') {
-          this.beastKnowledge[b.state.species] = 'observed';
-          this.callbacks.onKnowledgeUpdate?.(this.beastKnowledge);
-          this.callbacks.onNotification(`Beastopedia Updated: Observed ${b.state.name} combat tactics!`, 'loot');
-        }
-
-        // Check beast death
-        if (b.state.hp <= 0) {
-          b.state.state = 'dead';
-          this.beastKnowledge[b.state.species] = 'mastered';
-          this.callbacks.onKnowledgeUpdate?.(this.beastKnowledge);
-          sound.playBeastRoar(b.state.species, false);
-          this.callbacks.onNotification(`COLOSSAL BEAST FELLED: ${b.state.name}! Beastopedia Mastered! Carve [E]`, 'loot');
-          if (!this.beastsHunted.includes(b.state.id)) {
-            this.beastsHunted.push(b.state.id);
-          }
-          this.checkQuestMilestones(b.state.species);
-        }
-
-        this.callbacks.onTargetChange(b.state);
-        break;
-      }
-    }
-  }
-
-  private checkQuestMilestones(slainSpecies: BeastSpecies) {
-    if (slainSpecies === 'raptor' && this.currentQuestIndex === 0) {
-      this.currentQuestIndex = 1;
-      this.callbacks.onQuestUpdate(1);
-      this.callbacks.onNotification('Quest Updated: Journey to Black-Sand Coast for Brontoshell!', 'loot');
-    } else if (slainSpecies === 'brontoshell' && this.currentQuestIndex === 1) {
-      this.currentQuestIndex = 2;
-      this.callbacks.onQuestUpdate(2);
-      this.callbacks.onNotification('Quest Updated: Ascend to Steaming Springs to track Thunderhorn!', 'loot');
-    } else if (slainSpecies === 'thunderhorn' && this.currentQuestIndex === 2) {
-      this.currentQuestIndex = 3;
-      this.callbacks.onQuestUpdate(3);
-      this.callbacks.onNotification('Quest Updated: Summit the High Caldera & repair Signal Tower!', 'loot');
-    } else if (slainSpecies === 'caldera_titan' && this.currentQuestIndex >= 4) {
-      this.beaconLit = true;
-      const flame = this.terrain.towerGroup.getObjectByName('beacon_flame') as THREE.Mesh;
-      if (flame) {
-        (flame.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(0xff4400);
-        (flame.material as THREE.MeshStandardMaterial).emissiveIntensity = 2.0;
-        flame.scale.set(2.2, 2.2, 2.2);
-      }
-      sound.playVictory();
-      this.callbacks.onVictory({
-        time: Math.round((Date.now() - this.runStartTime) / 1000),
-        beastsSlain: this.beastsHunted.length,
-        materialsGathered: this.totalMaterialsGathered,
+  public toggleHunterFocus() {
+    this.focusVisionActive = !this.focusVisionActive;
+    this.focusTimer = this.focusVisionActive ? 10 : 0;
+    sound.playFocusPulse();
+    this.callbacks.onFocusChange(this.focusVisionActive);
+    this.beasts.forEach((b) => {
+      b.rig.weakPointIndicators.forEach((mesh, id) => {
+        const wp = b.state.weakPoints.find((w) => w.id === id);
+        mesh.visible = this.focusVisionActive && !!wp && !wp.broken && b.state.hp > 0;
       });
-    }
+    });
   }
 
   public handleInteract() {
-    // 1. Check near Campfire Workbench (x: 0, z: 25)
-    const distToCamp = Math.hypot(this.playerPos.x - 0, this.playerPos.z - 25);
-    if (distToCamp < 4.5) {
-      // Rest, restore health, open crafting
+    // 1. Check Tribal NPCs Conversation & Gift
+    for (const npc of this.npcs) {
+      const dist = Math.hypot(this.playerPos.x - npc.data.x, this.playerPos.z - npc.data.z);
+      if (dist < 4.2) {
+        sound.playGather();
+        if (npc.data.giftMaterial && !npc.data.giftMaterial.claimed) {
+          npc.data.giftMaterial.claimed = true;
+          const matId = npc.data.giftMaterial.id;
+          const cnt = npc.data.giftMaterial.count;
+          this.inventoryMaterials[matId] = (this.inventoryMaterials[matId] || 0) + cnt;
+          this.callbacks.onNotification(`${npc.data.greeting} (+${cnt} ${matId.replace('_', ' ')})`, 'loot');
+        } else {
+          this.callbacks.onNotification(npc.data.greeting, 'info');
+        }
+        return;
+      }
+    }
+
+    // 2. Check Campfire Workbench (0, 28)
+    const distCamp = Math.hypot(this.playerPos.x - 0, this.playerPos.z - 28);
+    if (distCamp < 5.2) {
       this.playerStats.hp = this.playerStats.maxHp;
       this.playerStats.stamina = this.playerStats.maxStamina;
-      this.playerStats.healingFlasks = this.playerStats.maxHealingFlasks;
-      this.playerStats.stones = 5;
-      sound.playHeal();
+      this.playerStats.healingFlasks = Math.max(this.playerStats.healingFlasks, 3);
+      this.playerStats.lureStones = 5;
       this.callbacks.onStatsChange(this.playerStats);
-      this.callbacks.onNotification('Rested at Campfire: HP & Vitality Salves restored! Workbench open.', 'loot');
       this.callbacks.onOpenCrafting();
       return;
     }
 
-    // 2. Check near Dead Beasts to Carve
-    for (const b of this.beasts) {
-      if (b.state.state === 'dead' && !b.state.carved) {
-        const dist = Math.hypot(b.state.x - this.playerPos.x, b.state.z - this.playerPos.z);
-        if (dist < 4.5) {
-          b.state.carved = true;
-          this.playerAction = 'carve';
-          this.actionTimer = 1.0;
-          sound.playCarve();
-
-          // Yield drops
-          const drops = b.state.drops;
-          const dropTexts: string[] = [];
-          for (const [item, count] of Object.entries(drops)) {
-            this.inventoryMaterials[item] = (this.inventoryMaterials[item] || 0) + count;
-            this.totalMaterialsGathered += count;
-            dropTexts.push(`${item.replace('_', ' ')} x${count}`);
-          }
-
-          this.spawnParticles(b.state.x, b.state.y + 0.8, b.state.z, 20, 0xf59e0b, 2.5);
-          this.callbacks.onNotification(`CARVED ${b.state.name}: ${dropTexts.join(', ')}`, 'loot');
-          return;
-        }
-      }
-    }
-
-    // 3. Check near Signal Tower at Caldera Summit (x: 0, z: -95)
-    const distToTower = Math.hypot(this.playerPos.x - 0, this.playerPos.z - (-95));
-    if (distToTower < 8.0) {
-      if (this.signalTowerProgress < 50 && (this.inventoryMaterials['obsidian_shard'] || 0) >= 3) {
-        this.inventoryMaterials['obsidian_shard'] -= 3;
-        this.signalTowerProgress = 50;
-        sound.playHeal();
-        this.callbacks.onNotification('Signal Tower Reflector Dish installed! Progress: 50%. Next: Magma Igniter.', 'loot');
-      } else if (this.signalTowerProgress === 50 && (this.inventoryMaterials['magma_core'] || 0) >= 1) {
-        this.inventoryMaterials['magma_core'] -= 1;
-        this.signalTowerProgress = 100;
-        this.currentQuestIndex = 4;
-        sound.playVictory();
-        this.callbacks.onNotification('Signal Tower Prime Igniter Installed! The Caldera Titan awakens!', 'danger');
-      } else if (this.signalTowerProgress === 100 && !this.beaconLit) {
-        this.callbacks.onNotification('Caldera Titan must be defeated to ignite the summit beacon fire!', 'danger');
+    // 3. Check Signal Tower (0, 5)
+    const distTower = Math.hypot(this.playerPos.x - 0, this.playerPos.z - 5);
+    if (distTower < 6.0) {
+      if (this.beastsHunted.includes('caldera_titan') || (this.inventoryMaterials.titan_fang || 0) > 0) {
+        this.beaconLit = true;
+        this.signalTowerProgress = 3;
+        this.terrain.updateTowerStage(3, true);
+        sound.playVictoryFanfare();
+        this.callbacks.onVictory({
+          time: Math.round(this.elapsedRunTime),
+          beastsSlain: this.beastsHunted.length,
+          materialsGathered: this.totalMaterialsGathered,
+        });
       } else {
-        this.callbacks.onNotification('Signal Tower requires Obsidian Shards (x3) and Magma Core (x1) to ignite.', 'info');
+        this.callbacks.onNotification(
+          'Slay Ignis-Rex the Caldera Titan or craft the Beacon at Campfire to ignite the Signal Tower!',
+          'info'
+        );
       }
       return;
     }
 
-    // 4. Check near Track Clues to Inspect
-    for (const c of this.terrain.clues) {
-      if (!c.inspected) {
-        const d = Math.hypot(c.x - this.playerPos.x, c.z - this.playerPos.z);
-        if (d < 3.2) {
-          c.inspected = true;
-          if (this.beastKnowledge[c.species] === 'unknown') {
-            this.beastKnowledge[c.species] = 'tracked';
-            this.callbacks.onKnowledgeUpdate?.(this.beastKnowledge);
-          }
-          sound.playHeal();
-          this.callbacks.onNotification(
-            `Studied Track: Fresh ${c.species.toUpperCase()} ${c.type.replace('_', ' ')}! Added to Beastopedia.`,
-            'loot'
-          );
-          // Highlight track clue brightly
-          const clueObj = this.terrain.clueGroup.getObjectByName(c.id);
-          if (clueObj) {
-            clueObj.scale.set(2, 2, 2);
-          }
+    // 4. Check Carve Fallen Beasts
+    for (const actor of this.beasts) {
+      if (actor.state.hp <= 0 && !actor.state.carved) {
+        const dist = Math.hypot(this.playerPos.x - actor.state.x, this.playerPos.z - actor.state.z);
+        if (dist < 5.2) {
+          actor.state.carved = true;
+          sound.playGather();
+          this.grantBeastCarveDrops(actor.state.species);
           return;
         }
       }
+    }
+
+    // 5. Check Track Clues
+    for (const c of this.clues) {
+      if (!c.data.discovered) {
+        const dist = Math.hypot(this.playerPos.x - c.data.x, this.playerPos.z - c.data.z);
+        if (dist < 4.2) {
+          c.data.discovered = true;
+          c.mesh.visible = false;
+          sound.playGather();
+          this.inventoryMaterials.sun_herb = (this.inventoryMaterials.sun_herb || 0) + 1;
+          this.totalMaterialsGathered++;
+          this.upgradeKnowledge(c.data.species, 'sighted');
+          this.callbacks.onNotification(`Track Examined: ${c.data.description} (+1 Sun-Herb)`, 'loot');
+          return;
+        }
+      }
+    }
+  }
+
+  private grantBeastCarveDrops(species: BeastSpecies) {
+    if (species === 'raptor') {
+      this.inventoryMaterials.raptor_claw = (this.inventoryMaterials.raptor_claw || 0) + 2;
+      this.inventoryMaterials.raptor_hide = (this.inventoryMaterials.raptor_hide || 0) + 2;
+      this.inventoryMaterials.beast_bone = (this.inventoryMaterials.beast_bone || 0) + 2;
+      this.callbacks.onNotification('Carved: +2 Raptor Talon, +2 Raptor Hide, +2 Beast Bone!', 'loot');
+    } else if (species === 'snapjaw') {
+      this.inventoryMaterials.raptor_claw = (this.inventoryMaterials.raptor_claw || 0) + 2;
+      this.inventoryMaterials.coral_stone = (this.inventoryMaterials.coral_stone || 0) + 2;
+      this.inventoryMaterials.beast_bone = (this.inventoryMaterials.beast_bone || 0) + 3;
+      this.callbacks.onNotification('Carved River Snapjaw: +2 Talon, +2 Coral Stone, +3 Beast Bone!', 'loot');
+    } else if (species === 'brontoshell') {
+      this.inventoryMaterials.bronto_shell = (this.inventoryMaterials.bronto_shell || 0) + 2;
+      this.inventoryMaterials.coral_stone = (this.inventoryMaterials.coral_stone || 0) + 2;
+      this.callbacks.onNotification('Carved: +2 Brontoshell Carapace, +2 Coral Stone!', 'loot');
+    } else if (species === 'frostfang') {
+      this.inventoryMaterials.thunder_horn = (this.inventoryMaterials.thunder_horn || 0) + 2;
+      this.inventoryMaterials.obsidian_shard = (this.inventoryMaterials.obsidian_shard || 0) + 2;
+      this.inventoryMaterials.beast_bone = (this.inventoryMaterials.beast_bone || 0) + 3;
+      this.callbacks.onNotification('Carved Frostfang Mammoth: +2 Glacial Ivory Horn, +2 Obsidian, +3 Bone!', 'loot');
+    } else if (species === 'thunderhorn') {
+      this.inventoryMaterials.thunder_horn = (this.inventoryMaterials.thunder_horn || 0) + 2;
+      this.inventoryMaterials.obsidian_shard = (this.inventoryMaterials.obsidian_shard || 0) + 3;
+      this.callbacks.onNotification('Carved: +2 Conductive Crest-Horn, +3 Obsidian Shard!', 'loot');
+    } else if (species === 'caldera_titan') {
+      this.inventoryMaterials.titan_fang = (this.inventoryMaterials.titan_fang || 0) + 2;
+      this.inventoryMaterials.magma_core = (this.inventoryMaterials.magma_core || 0) + 2;
+      this.callbacks.onNotification('Carved: +2 Sovereign Titan Fang, +2 Apex Magma Heart!', 'loot');
+    }
+    this.totalMaterialsGathered += 5;
+  }
+
+  private upgradeKnowledge(species: BeastSpecies, level: BeastKnowledgeLevel) {
+    const order: BeastKnowledgeLevel[] = ['unseen', 'tracked', 'sighted', 'mastered'];
+    const currIdx = order.indexOf(this.beastKnowledge[species] || 'tracked');
+    const nextIdx = order.indexOf(level);
+    if (nextIdx > currIdx) {
+      this.beastKnowledge[species] = level;
+      this.callbacks.onKnowledgeUpdate?.({ ...this.beastKnowledge });
     }
   }
 
   public setEquippedWeapon(id: WeaponId) {
     this.equippedWeapon = id;
+    if (!this.ownedWeapons.includes(id)) this.ownedWeapons.push(id);
+    const def = WEAPON_REGISTRY[id];
+    this.playerStats.attackPower = def.baseDamage;
+    this.playerStats.critChance = def.critChance;
     this.hunter.updateWeapon(id);
     this.callbacks.onWeaponChange(id);
-    this.callbacks.onNotification(`Equipped ${WEAPON_REGISTRY[id].name}`, 'info');
+    this.callbacks.onStatsChange(this.playerStats);
   }
 
   public setEquippedArmor(id: ArmorId) {
     this.equippedArmor = id;
-    this.hunter.updateArmor(id);
+    if (!this.ownedArmors.includes(id)) this.ownedArmors.push(id);
     const def = ARMOR_REGISTRY[id];
     this.playerStats.defense = def.defense;
-    this.playerStats.maxStamina = 100 + def.staminaBonus;
-    this.callbacks.onStatsChange(this.playerStats);
-    this.callbacks.onNotification(`Equipped ${def.name} (Def: ${def.defense})`, 'info');
-  }
-
-  private tick(now: number) {
-    this.animFrameId = requestAnimationFrame(this.tick);
-    const rawDt = (now - this.lastTime) / 1000;
-    this.lastTime = now;
-    const dt = Math.min(rawDt, 0.05);
-
-    // Hitstop freeze frame
-    if (this.hitstopTimer > 0) {
-      this.hitstopTimer -= dt;
-      this.renderer.render(this.scene, this.camera);
-      return;
-    }
-
-    // Camera shake decay
-    if (this.cameraShake > 0) {
-      this.cameraShake = Math.max(0, this.cameraShake - dt * 1.8);
-    }
-
-    if (this.gameState === 'playing') {
-      const weather = this.weatherSystem.update(dt, this.playerPos, this.sunLight, this.scene);
-      this.callbacks.onWeatherChange?.(weather.type);
-
-      this.updatePlayer(dt);
-      this.updateBeasts(dt, weather);
-      this.updateTraps(dt);
-      this.updateProjectiles(dt);
-      this.updateParticles(dt);
-      this.updateTrails(dt, weather.scentDecayRate);
-      this.updateInteractionPrompt();
-    } else if (this.gameState === 'title') {
-      // Atmospheric circular flyover pan of volcanic island
-      const angle = now * 0.00015;
-      this.camera.position.set(Math.cos(angle) * 75, 38, Math.sin(angle) * 75);
-      this.camera.lookAt(0, 15, -35);
-      this.updateParticles(dt);
-    }
-
-    if (this.gameState === 'playing') {
-      this.updateCamera(dt);
-    }
-
-    this.renderer.render(this.scene, this.camera);
-  }
-
-  private updatePlayer(dt: number) {
-    // 1. Stamina Regeneration
-    if (this.playerAction !== 'attack' && this.playerAction !== 'dodge') {
-      this.playerStats.stamina = Math.min(
-        this.playerStats.maxStamina,
-        this.playerStats.stamina + this.playerStats.staminaRegen * dt
-      );
-    }
-
-    // 2. Action Timers
-    if (this.actionTimer > 0) {
-      this.actionTimer -= dt;
-      if (this.actionTimer <= 0) {
-        this.playerAction = 'idle';
-      }
-    }
-
-    // 3. Movement
-    let inputX = (this.keys.get('KeyD') ? 1 : 0) - (this.keys.get('KeyA') ? 1 : 0) + this.virtualMoveX;
-    let inputZ = (this.keys.get('KeyS') ? 1 : 0) - (this.keys.get('KeyW') ? 1 : 0) + this.virtualMoveY;
-
-    // Check Dodge Key
-    if (this.keys.get('Space')) {
-      this.startDodgeRoll();
-    }
-
-    if (this.playerAction === 'dodge') {
-      this.rollProgress += dt * 1.6;
-      const speed = 14.5 * Math.sin(Math.min(Math.PI, this.rollProgress * Math.PI));
-      this.playerPos.x += this.rollDirection.x * speed * dt;
-      this.playerPos.z += this.rollDirection.z * speed * dt;
-
-      // Dodge roll rotation on torso
-      this.hunter.torso.rotation.x = this.rollProgress * Math.PI * 2;
-    } else if (this.playerAction !== 'hurt' && this.playerAction !== 'carve') {
-      this.hunter.torso.rotation.x = 0;
-      const moveLen = Math.hypot(inputX, inputZ);
-
-      if (moveLen > 0.08) {
-        const speed = this.playerAction === 'attack' ? 2.5 : 7.2;
-        const normX = inputX / moveLen;
-        const normZ = inputZ / moveLen;
-
-        // Angle relative to camera
-        const moveAngle = this.cameraYaw + Math.atan2(normX, normZ);
-        const targetRot = moveAngle;
-
-        // Exponential rotation damp
-        this.playerRotation = THREE.MathUtils.damp(this.playerRotation, targetRot, 14, dt);
-
-        this.playerPos.x += Math.sin(moveAngle) * speed * dt;
-        this.playerPos.z += Math.cos(moveAngle) * speed * dt;
-
-        if (this.playerAction === 'idle') {
-          this.playerAction = 'run';
-        }
-
-        // Walk cycle leg animations
-        this.walkCycleTimer += dt * speed * 2.2;
-        this.hunter.leftLeg.rotation.x = Math.sin(this.walkCycleTimer) * 0.65;
-        this.hunter.rightLeg.rotation.x = -Math.sin(this.walkCycleTimer) * 0.65;
-        this.hunter.leftArm.rotation.x = -Math.sin(this.walkCycleTimer) * 0.55;
-
-        // Subtle footstep sound & footprint
-        if (Math.sin(this.walkCycleTimer) > 0.95) {
-          this.footprintTimer += dt;
-          if (this.footprintTimer > 0.4) {
-            sound.playFootstep();
-            this.trailSystem.addFootprint(this.playerPos.x, this.playerPos.y, this.playerPos.z, this.playerRotation, 'hunter');
-            this.footprintTimer = 0;
-          }
-        }
-      } else {
-        if (this.playerAction === 'run') {
-          this.playerAction = 'idle';
-        }
-        // Idle breathing
-        this.hunter.leftLeg.rotation.x = 0;
-        this.hunter.rightLeg.rotation.x = 0;
-        this.hunter.leftArm.rotation.x = 0;
-        this.hunter.torso.position.y = 0.95 + Math.sin(performance.now() * 0.003) * 0.025;
-      }
-    }
-
-    // Spear attack thrust animation
-    if (this.playerAction === 'attack') {
-      const progress = 1 - this.actionTimer / 0.38;
-      this.hunter.rightArm.rotation.x = Math.sin(progress * Math.PI) * 1.6;
-      this.hunter.weaponHolder.position.z = Math.sin(progress * Math.PI) * 0.6;
-    } else {
-      this.hunter.rightArm.rotation.x = 0.2;
-      this.hunter.weaponHolder.position.z = 0.1;
-    }
-
-    // Clamp to terrain
-    this.playerPos.y = this.terrain.getHeight(this.playerPos.x, this.playerPos.z);
-    this.hunter.root.position.copy(this.playerPos);
-    this.hunter.root.rotation.y = this.playerRotation;
-
-    // Follow focus light
-    this.focusLight.position.set(this.playerPos.x, this.playerPos.y + 2.5, this.playerPos.z);
-
-    // Sync stats to UI
+    this.playerStats.maxHp = 140 + def.maxHpBonus;
+    this.playerStats.hp = Math.min(this.playerStats.maxHp, this.playerStats.hp + def.maxHpBonus);
+    this.playerStats.maxStamina = 110 + def.maxStaminaBonus;
+    this.hunter.updateArmor(id);
     this.callbacks.onStatsChange(this.playerStats);
   }
 
-  private updateBeasts(dt: number, weather: WeatherCondition) {
-    let closestBeast: BeastState | null = null;
-    let closestDist = Infinity;
-
-    // 1. Mutual Separation Force to prevent beasts overlapping or clumping
-    for (let i = 0; i < this.beasts.length; i++) {
-      for (let j = i + 1; j < this.beasts.length; j++) {
-        const b1 = this.beasts[i];
-        const b2 = this.beasts[j];
-        if (b1.state.hp <= 0 || b2.state.hp <= 0) continue;
-        const dx = b2.state.x - b1.state.x;
-        const dz = b2.state.z - b1.state.z;
-        const dist = Math.hypot(dx, dz);
-        const minDist = 7.0;
-        if (dist > 0.001 && dist < minDist) {
-          const push = ((minDist - dist) / minDist) * 3.5 * dt;
-          b1.state.x -= (dx / dist) * push;
-          b1.state.z -= (dz / dist) * push;
-          b2.state.x += (dx / dist) * push;
-          b2.state.z += (dz / dist) * push;
-        }
-      }
-    }
-
-    // 2. Individual Beast State Machine & Kinematics
-    for (const b of this.beasts) {
-      if (b.state.hp <= 0) {
-        // Dead beast: smoothly tilt onto side and rest cleanly on ground without clipping
-        b.rig.root.rotation.z = THREE.MathUtils.damp(b.rig.root.rotation.z, Math.PI / 2, 5.0, dt);
-        const deadYOffset = b.state.species === 'caldera_titan' ? 0.9 : b.state.species === 'brontoshell' ? 0.75 : 0.45;
-        b.rig.root.position.set(b.state.x, this.terrain.getHeight(b.state.x, b.state.z) + deadYOffset, b.state.z);
-        // Calm all limbs
-        b.rig.legs.forEach((leg) => {
-          leg.rotation.x = THREE.MathUtils.damp(leg.rotation.x, 0, 8.0, dt);
-        });
-        if (b.rig.jaw) b.rig.jaw.rotation.x = 0;
-        continue;
-      }
-
-      const distToPlayer = Math.hypot(this.playerPos.x - b.state.x, this.playerPos.z - b.state.z);
-      if (distToPlayer < closestDist) {
-        closestDist = distToPlayer;
-        closestBeast = b.state;
-      }
-
-      // Beast AI influenced by weather
-      const aggroRange = (b.state.enraged ? 38 : 26) * weather.beastAwarenessMod;
-      const attackRange = b.state.species === 'caldera_titan' ? 7.5 : b.state.species === 'thunderhorn' ? 6.5 : 4.0;
-      let isMoving = false;
-      const baseSpd = b.state.species === 'raptor' ? 8.5 : b.state.species === 'thunderhorn' ? 6.8 : 4.6;
-      const speed = baseSpd * (b.state.enraged ? 1.35 : 1.0) * weather.beastSpeedMod;
-
-      // Decrement attack cooldown
-      if (b.state.attackCooldown > 0) {
-        b.state.attackCooldown -= dt * (weather.type === 'ash_storm' ? 1.25 : 1.0);
-      }
-
-      // Handle Staggered state
-      if (b.state.staggered) {
-        b.state.staggerTimer -= dt;
-        if (b.state.staggerTimer <= 0) {
-          b.state.staggered = false;
-          b.state.state = 'stalk';
-        }
-        // Stagger topple posture: head low, torso tilted
-        b.rig.torso.rotation.x = THREE.MathUtils.damp(b.rig.torso.rotation.x, 0.42, 6.0, dt);
-        if (b.rig.jaw) b.rig.jaw.rotation.x = 0.2;
-        // Legs stay planted
-        b.rig.legs.forEach((leg) => {
-          leg.rotation.x = THREE.MathUtils.damp(leg.rotation.x, 0, 8.0, dt);
-        });
-        // Ground clamp
-        b.state.y = this.terrain.getHeight(b.state.x, b.state.z);
-        b.rig.root.position.set(b.state.x, b.state.y, b.state.z);
-        b.rig.root.rotation.y = b.state.rotation;
-        continue;
-      }
-
-      // Combat Behavior when aware
-      if (distToPlayer < aggroRange || b.state.alertLevel > 0.2) {
-        b.state.alertLevel = 1.0;
-
-        // Turn towards player using shortest-arc angular interpolation (eliminates 360 spinning glitch)
-        const targetAngle = Math.atan2(this.playerPos.x - b.state.x, this.playerPos.z - b.state.z);
-        let diff = targetAngle - b.state.rotation;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        b.state.rotation += diff * Math.min(1.0, dt * 5.5);
-
-        if (b.state.state === 'telegraph') {
-          // 1. TELEGRAPH PHASE: Pre-strike windup
-          const telegraphDuration = (b.state.enraged ? 0.55 : 0.85);
-          b.state.telegraphProgress += dt / telegraphDuration;
-
-          // Windup telegraph animation: rearing back, fanning quills/jaw
-          b.rig.torso.position.y += Math.sin(b.state.telegraphProgress * Math.PI) * 0.06;
-          b.rig.torso.rotation.x = -Math.sin(b.state.telegraphProgress * Math.PI) * 0.25;
-          if (b.rig.jaw) b.rig.jaw.rotation.x = Math.sin(b.state.telegraphProgress * Math.PI) * 0.45;
-
-          if (b.state.telegraphProgress >= 1.0) {
-            // Transition directly into ATTACK strike
-            b.state.state = 'attack';
-            b.attackTimer = 0.28;
-            sound.playBeastRoar(b.state.species, b.state.enraged);
-
-            // Check hit once at strike commitment
-            if (distToPlayer <= attackRange + 1.2) {
-              if (this.playerAction === 'dodge' && isDodgeInvulnerable(this.rollProgress)) {
-                // Glorious Perfect Dodge!
-                this.timeScale = 0.35;
-                setTimeout(() => (this.timeScale = 1.0), 320);
-                sound.playDodge();
-                this.callbacks.onNotification('PERFECT DODGE! Beast vulnerable for punish!', 'loot');
-              } else {
-                const basePower = b.state.species === 'caldera_titan' ? 48 : b.state.species === 'thunderhorn' ? 36 : 28;
-                const dmg = calculatePlayerDamageTaken(basePower * (b.state.enraged ? 1.3 : 1.0), this.playerStats.defense);
-
-                this.playerStats.hp = Math.max(0, this.playerStats.hp - dmg);
-                sound.playHurt();
-                this.cameraShake = 0.65;
-                this.spawnParticles(this.playerPos.x, this.playerPos.y + 1.0, this.playerPos.z, 16, 0xef4444, 3.0);
-
-                // Directional Knockback
-                this.playerPos.x += Math.sin(b.state.rotation) * 3.5;
-                this.playerPos.z += Math.cos(b.state.rotation) * 3.5;
-                this.playerAction = 'hurt';
-                this.actionTimer = 0.45;
-
-                this.callbacks.onNotification(`Hit by ${b.state.name}! Took ${dmg} damage.`, 'danger');
-
-                if (this.playerStats.hp <= 0) {
-                  sound.playDefeat();
-                  this.setGameState('gameover');
-                  this.callbacks.onDefeat();
-                }
-              }
-            }
-          }
-        } else if (b.state.state === 'attack') {
-          // 2. ATTACK EXECUTION PHASE: Lunge forward with momentum
-          b.attackTimer -= dt;
-          b.state.x += Math.sin(b.state.rotation) * speed * 1.8 * dt;
-          b.state.z += Math.cos(b.state.rotation) * speed * 1.8 * dt;
-          if (b.rig.jaw) b.rig.jaw.rotation.x = 0; // snap jaw shut
-          b.rig.torso.rotation.x = THREE.MathUtils.damp(b.rig.torso.rotation.x, 0.15, 8.0, dt);
-
-          if (b.attackTimer <= 0) {
-            // Transition into RECOVER punish window
-            b.state.state = 'recover';
-            b.recoverTimer = b.state.species === 'caldera_titan' ? 0.9 : 0.65;
-            b.state.attackCooldown = (b.state.enraged ? 2.0 : 3.2) / (weather.type === 'ash_storm' ? 1.2 : 1.0);
-          }
-        } else if (b.state.state === 'recover') {
-          // 3. RECOVER PUNISH WINDOW: Panting / momentarily stationary
-          b.recoverTimer -= dt;
-          b.rig.torso.rotation.x = THREE.MathUtils.damp(b.rig.torso.rotation.x, 0, 5.0, dt);
-          if (b.recoverTimer <= 0) {
-            b.state.state = 'stalk';
-          }
-        } else {
-          // 4. STALK / APPROACH PHASE
-          b.rig.torso.rotation.x = THREE.MathUtils.damp(b.rig.torso.rotation.x, 0, 5.0, dt);
-          if (distToPlayer > attackRange) {
-            // Walk toward player
-            b.state.x += Math.sin(b.state.rotation) * speed * dt;
-            b.state.z += Math.cos(b.state.rotation) * speed * dt;
-            b.state.state = 'stalk';
-            isMoving = true;
-
-            // Emit beast footprints intermittently
-            if (Math.random() < 0.035) {
-              this.trailSystem.addFootprint(b.state.x, b.state.y, b.state.z, b.state.rotation, b.state.species);
-            }
-          } else {
-            // Within attack range: initiate telegraph if cooldown ready
-            if (b.state.attackCooldown <= 0) {
-              b.state.state = 'telegraph';
-              b.state.telegraphProgress = 0;
-              sound.playTelegraph();
-            }
-          }
-        }
-      } else {
-        // Idle / Patrol wander around base spawn
-        b.state.state = 'patrol';
-        b.rig.torso.rotation.x = THREE.MathUtils.damp(b.rig.torso.rotation.x, 0, 4.0, dt);
-        const wanderTime = performance.now() * 0.00035 + b.state.x * 0.1;
-        const targetX = b.baseSpawn.x + Math.sin(wanderTime) * 8;
-        const targetZ = b.baseSpawn.z + Math.cos(wanderTime) * 8;
-
-        const targetWanderAngle = Math.atan2(targetX - b.state.x, targetZ - b.state.z);
-        let diff = targetWanderAngle - b.state.rotation;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        b.state.rotation += diff * Math.min(1.0, dt * 2.5);
-
-        const patrolDist = Math.hypot(targetX - b.state.x, targetZ - b.state.z);
-        if (patrolDist > 0.5) {
-          b.state.x += Math.sin(b.state.rotation) * 2.5 * dt;
-          b.state.z += Math.cos(b.state.rotation) * 2.5 * dt;
-          isMoving = true;
-        }
-      }
-
-      // Gait & leg walk cycles: only swing legs when actively walking
-      if (isMoving) {
-        const walkCycle = performance.now() * 0.006 * speed;
-        b.rig.legs.forEach((leg, idx) => {
-          leg.rotation.x = Math.sin(walkCycle + (idx % 2 === 0 ? 0 : Math.PI)) * 0.45;
-        });
-        b.rig.tail.rotation.y = Math.sin(walkCycle * 0.6) * 0.28;
-      } else {
-        b.rig.legs.forEach((leg) => {
-          leg.rotation.x = THREE.MathUtils.damp(leg.rotation.x, 0, 8.0, dt);
-        });
-        b.rig.tail.rotation.y = THREE.MathUtils.damp(b.rig.tail.rotation.y, 0, 5.0, dt);
-      }
-
-      // Ground clamp & root transform
-      b.state.y = this.terrain.getHeight(b.state.x, b.state.z);
-      b.rig.root.position.set(b.state.x, b.state.y, b.state.z);
-      b.rig.root.rotation.y = b.state.rotation;
-    }
-
-    this.callbacks.onTargetChange(closestDist < 30 ? closestBeast : null);
+  public setGameState(next: GameState) {
+    this.gameState = next;
   }
 
-  private updateTrails(dt: number, scentDecayRate: number) {
-    let closestBeastPos: THREE.Vector3 | null = null;
-    let minD = Infinity;
-
-    for (const b of this.beasts) {
-      if (b.state.hp > 0) {
-        const d = Math.hypot(b.state.x - this.playerPos.x, b.state.z - this.playerPos.z);
-        if (d < minD) {
-          minD = d;
-          closestBeastPos = new THREE.Vector3(b.state.x, b.state.y, b.state.z);
-        }
-      }
-    }
-
-    this.trailSystem.update(dt, this.focusVision, closestBeastPos, this.playerPos, scentDecayRate);
+  public respawnAtCampfire() {
+    this.playerPos.set(0, this.terrain.getHeight(0, 28), 28);
+    this.playerStats.hp = this.playerStats.maxHp;
+    this.playerStats.stamina = this.playerStats.maxStamina;
+    this.playerStats.healingFlasks = Math.max(this.playerStats.healingFlasks, 3);
+    this.callbacks.onStatsChange(this.playerStats);
   }
 
-  private updateTraps(dt: number) {
-    for (let i = this.activeTraps.length - 1; i >= 0; i--) {
-      const trap = this.activeTraps[i];
-      for (const b of this.beasts) {
-        if (b.state.hp <= 0) continue;
-        const d = Math.hypot(b.state.x - trap.x, b.state.z - trap.z);
-        if (d < 2.8) {
-          // Trigger trap!
-          sound.playTrapSnap();
-          b.state.staggered = true;
-          b.state.staggerTimer = 3.8;
-          b.state.hp = Math.max(0, b.state.hp - 45);
-          this.spawnParticles(trap.x, trap.y + 0.5, trap.z, 20, 0x854d0e, 3.0);
-          this.callbacks.onNotification(`${b.state.name} triggered pitfall trap! Heavily Staggered!`, 'loot');
-
-          this.scene.remove(trap.mesh);
-          this.activeTraps.splice(i, 1);
-          break;
-        }
-      }
-    }
-  }
-
-  private updateProjectiles(dt: number) {
-    for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
-      const p = this.activeProjectiles[i];
-      p.life -= dt;
-      p.vel.y -= 9.8 * dt; // gravity
-      p.pos.addScaledVector(p.vel, dt);
-      p.mesh.position.copy(p.pos);
-
-      // Check collision with beasts
-      for (const b of this.beasts) {
-        if (b.state.hp <= 0) continue;
-        const dist = Math.hypot(b.state.x - p.pos.x, b.state.z - p.pos.z);
-        if (dist < 2.5 && Math.abs(b.state.y + 1.2 - p.pos.y) < 2.5) {
-          // Hit beast!
-          b.state.hp = Math.max(0, b.state.hp - p.damage);
-          b.state.alertLevel = 1.0;
-          sound.playHit(false, false);
-          this.spawnParticles(p.pos.x, p.pos.y, p.pos.z, 10, 0x64748b, 2.0);
-          p.life = 0;
-          break;
-        }
-      }
-
-      if (p.life <= 0 || p.pos.y < this.terrain.getHeight(p.pos.x, p.pos.z)) {
-        this.scene.remove(p.mesh);
-        this.activeProjectiles.splice(i, 1);
-      }
-    }
-  }
-
-  private updateParticles(dt: number) {
-    for (const p of this.particles) {
-      if (p.life > 0) {
-        p.life -= dt;
-        p.mesh.position.addScaledVector(p.vel, dt);
-        p.vel.y -= 4.0 * dt;
-        const alpha = Math.max(0, p.life / p.maxLife);
-        p.mesh.scale.setScalar(alpha);
-        if (p.life <= 0) {
-          p.mesh.visible = false;
-        }
-      }
-    }
-  }
-
-  private updateInteractionPrompt() {
-    // 1. Camp
-    if (Math.hypot(this.playerPos.x - 0, this.playerPos.z - 25) < 4.5) {
-      this.callbacks.onInteractPrompt('Press [E] or Tap to Rest at Campfire & Craft');
-      return;
-    }
-    // 2. Dead Beast
-    for (const b of this.beasts) {
-      if (b.state.state === 'dead' && !b.state.carved) {
-        if (Math.hypot(b.state.x - this.playerPos.x, b.state.z - this.playerPos.z) < 4.5) {
-          this.callbacks.onInteractPrompt(`Press [E] or Tap to Carve ${b.state.name}`);
-          return;
-        }
-      }
-    }
-    // 3. Tower
-    if (Math.hypot(this.playerPos.x - 0, this.playerPos.z - (-95)) < 8.0) {
-      this.callbacks.onInteractPrompt(
-        this.signalTowerProgress < 100
-          ? 'Press [E] or Tap to Repair Signal Tower'
-          : 'Press [E] or Tap to Ignite Island Beacon'
-      );
-      return;
-    }
-    // 4. Clue
-    for (const c of this.terrain.clues) {
-      if (!c.inspected && Math.hypot(c.x - this.playerPos.x, c.z - this.playerPos.z) < 3.2) {
-        this.callbacks.onInteractPrompt(`Press [E] or Tap to Inspect ${c.species} ${c.type}`);
-        return;
-      }
-    }
-    this.callbacks.onInteractPrompt(null);
-  }
-
-  private updateCamera(dt: number) {
-    // Smooth target follow
-    const targetY = this.playerPos.y + 1.6;
-    this.cameraTarget.x = THREE.MathUtils.damp(this.cameraTarget.x, this.playerPos.x, 12, dt);
-    this.cameraTarget.y = THREE.MathUtils.damp(this.cameraTarget.y, targetY, 12, dt);
-    this.cameraTarget.z = THREE.MathUtils.damp(this.cameraTarget.z, this.playerPos.z, 12, dt);
-
-    const dist = this.cameraDistance;
-    const camX = this.cameraTarget.x - Math.sin(this.cameraYaw) * Math.cos(this.cameraPitch) * dist;
-    const camY = this.cameraTarget.y + Math.sin(this.cameraPitch) * dist;
-    const camZ = this.cameraTarget.z - Math.cos(this.cameraYaw) * Math.cos(this.cameraPitch) * dist;
-
-    // Ground collision prevention
-    const groundH = this.terrain.getHeight(camX, camZ) + 0.8;
-    const finalY = Math.max(groundH, camY);
-
-    // Apply trauma shake
-    const shakeOffset = this.cameraShake * this.cameraShake * 0.45;
-    const sx = (Math.random() - 0.5) * shakeOffset;
-    const sy = (Math.random() - 0.5) * shakeOffset;
-
-    this.camera.position.set(camX + sx, finalY + sy, camZ);
-    this.camera.lookAt(this.cameraTarget.x, this.cameraTarget.y + 0.3, this.cameraTarget.z);
-  }
-
-  public handleResize() {
-    if (!this.container || !this.renderer) return;
-    const w = this.container.clientWidth;
-    const h = this.container.clientHeight;
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h);
-  }
-
-  public getSaveSnapshot(playerName: string = 'Koa'): SaveData {
+  public getSaveSnapshot(): SaveData {
     return {
       version: 1,
       timestamp: Date.now(),
-      playerName,
-      biome: this.terrain.getBiomeAt(this.playerPos.x, this.playerPos.z),
+      playerName: 'Koa',
+      biome: this.terrain.getBiome(this.playerPos.x, this.playerPos.z),
       playerPos: { x: this.playerPos.x, y: this.playerPos.y, z: this.playerPos.z },
       playerStats: { ...this.playerStats },
       inventory: {
         materials: { ...this.inventoryMaterials },
-        weapons: ['flint_spear', 'bone_harpoon', 'obsidian_glaive', 'caldera_lance'].filter(
-          (w) => w === 'flint_spear' || (this.inventoryMaterials['beast_bone'] || 0) > 0
-        ) as WeaponId[],
+        weapons: [...this.ownedWeapons],
         equippedWeapon: this.equippedWeapon,
-        armors: ['scavenger_rags', 'beast_hide', 'chitin_cuirass', 'caldera_plate'],
+        armors: [...this.ownedArmors],
         equippedArmor: this.equippedArmor,
         tools: ['bone_knife'],
       },
@@ -1463,25 +963,576 @@ export class GameEngine {
       currentQuestIndex: this.currentQuestIndex,
       signalTowerProgress: this.signalTowerProgress,
       beaconLit: this.beaconLit,
+      settings: {
+        cameraSensitivity: 1,
+        mouseSensitivity: 1,
+        touchSensitivity: 1,
+        invertY: false,
+        audioVolume: 0.7,
+        masterVolume: 0.85,
+        sfxVolume: 0.9,
+        musicVolume: 0.5,
+        sfxMuted: false,
+        difficulty: 'hunter',
+        showDamageNumbers: true,
+      },
       beastKnowledge: { ...this.beastKnowledge },
       currentWeather: this.weatherSystem.currentWeather,
-      settings: {
-        mouseSensitivity: 1.0,
-        touchSensitivity: 1.2,
-        invertY: false,
-        masterVolume: 0.8,
-        sfxVolume: 0.9,
-        musicVolume: 0.7,
-        difficulty: 'hunter',
-        vibration: true,
-      },
     };
   }
 
-  public dispose() {
-    if (this.animFrameId) {
-      cancelAnimationFrame(this.animFrameId);
+  private tick(now: number) {
+    this.animFrameId = requestAnimationFrame(this.tick);
+    const dt = Math.min(0.05, Math.max(0.001, (now - this.lastTime) / 1000));
+    this.lastTime = now;
+
+    this.animateEnvironment(now * 0.001, dt);
+
+    if (this.gameState === 'title') {
+      this.titleOrbitAngle += dt * 0.18;
+      const camX = Math.cos(this.titleOrbitAngle) * 24;
+      const camZ = 18 + Math.sin(this.titleOrbitAngle) * 20;
+      const camY = this.terrain.getHeight(camX, camZ) + 7.5;
+      this.camera.position.set(camX, camY, camZ);
+      this.camera.lookAt(0, 3.5, 16);
+      this.renderer.render(this.scene, this.camera);
+      return;
     }
+
+    if (this.gameState === 'playing') {
+      this.elapsedRunTime += dt;
+      this.updatePlayer(dt);
+      this.updateNPCs(now * 0.001);
+      this.updateBeasts(dt);
+      this.updateProjectilesAndParticles(dt);
+      this.updateCamera(dt);
+      this.checkInteractPrompts();
+    }
+
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  private animateEnvironment(timeSec: number, dt: number) {
+    // Animate River & Ocean UV flow
+    if (this.materialCache.waterMaterial.map) {
+      this.materialCache.waterMaterial.map.offset.x = (timeSec * 0.18) % 1;
+      this.materialCache.waterMaterial.map.offset.y = Math.sin(timeSec * 0.8) * 0.04;
+    }
+    if (this.materialCache.oceanMaterial.map) {
+      this.materialCache.oceanMaterial.map.offset.y = (timeSec * 0.06) % 1;
+    }
+    this.terrain.oceanMesh.position.y = 0.35 + Math.sin(timeSec * 1.4) * 0.12;
+
+    // Animate Swimming 3D River & Ocean Fish
+    for (const fish of this.terrain.fishActors) {
+      const t = timeSec * fish.speed + fish.phase;
+      const nx = fish.baseX + Math.cos(t) * fish.radiusX;
+      const nz = fish.baseZ + Math.sin(t) * fish.radiusZ;
+      const dx = -Math.sin(t) * fish.radiusX;
+      const dz = Math.cos(t) * fish.radiusZ;
+      fish.mesh.position.set(nx, fish.baseY + Math.sin(t * 2.5) * 0.08, nz);
+      fish.mesh.rotation.y = Math.atan2(dx, dz);
+      fish.mesh.rotation.z = Math.sin(t * 6) * 0.12;
+    }
+
+    // Weather update
+    const weatherChanged = this.weatherSystem.update(dt, this.playerPos);
+    if (weatherChanged) {
+      this.callbacks.onWeatherChange?.(this.weatherSystem.currentWeather);
+    }
+  }
+
+  private updateNPCs(timeSec: number) {
+    for (let i = 0; i < this.npcs.length; i++) {
+      const npc = this.npcs[i];
+      npc.mesh.position.y = npc.data.y + Math.sin(timeSec * 2.2 + i) * 0.04;
+      // Face player gently when nearby
+      const dist = Math.hypot(this.playerPos.x - npc.data.x, this.playerPos.z - npc.data.z);
+      if (dist < 6.5) {
+        const targetRot = Math.atan2(this.playerPos.x - npc.data.x, this.playerPos.z - npc.data.z);
+        npc.mesh.rotation.y = stepAngleShortestArc(npc.mesh.rotation.y, targetRot, 0.08);
+      }
+    }
+  }
+
+  private updatePlayer(dt: number) {
+    // Stamina regen
+    if (!this.isDodging && !this.isAttacking && !this.isChargingHeavy) {
+      const weatherMult = WEATHER_CONDITIONS[this.weatherSystem.currentWeather].staminaMultiplier ?? 1;
+      this.playerStats.stamina = Math.min(
+        this.playerStats.maxStamina,
+        this.playerStats.stamina + this.playerStats.staminaRegenRate * weatherMult * dt
+      );
+    }
+
+    if (this.isChargingHeavy) {
+      this.heavyChargeTime += dt;
+      if (this.heavyChargeTime >= 0.75) {
+        this.releaseHeavyThrust();
+      }
+    }
+
+    if (this.focusVisionActive) {
+      this.focusTimer -= dt;
+      this.focusLight.position.set(this.playerPos.x, this.playerPos.y + 2.2, this.playerPos.z);
+      this.focusLight.intensity = 2.8;
+      if (this.focusTimer <= 0) {
+        this.focusVisionActive = false;
+        this.focusLight.intensity = 0;
+        this.callbacks.onFocusChange(false);
+      }
+    } else {
+      this.focusLight.intensity = 0;
+    }
+
+    // Dodge roll movement
+    if (this.isDodging) {
+      this.dodgeTimer -= dt;
+      const rollSpeed = 12.5;
+      this.playerPos.x += this.dodgeDirX * rollSpeed * dt;
+      this.playerPos.z += this.dodgeDirZ * rollSpeed * dt;
+      this.hunter.torso.rotation.x = (1 - this.dodgeTimer / 0.46) * Math.PI * 2;
+      if (this.dodgeTimer <= 0) {
+        this.isDodging = false;
+        this.hunter.torso.rotation.x = 0;
+      }
+    } else {
+      // FIXED CAMERA-RELATIVE JOYSTICK & KEYBOARD MOVEMENT:
+      // Pulling joystick UP (virtualMoveY < 0) or pressing W/ArrowUp yields moveForward > 0 (moves FRONT, into scene).
+      // Pulling joystick DOWN (virtualMoveY > 0) or pressing S/ArrowDown yields moveForward < 0 (moves BACK, toward camera).
+      // Pulling joystick RIGHT (virtualMoveX > 0) or pressing D/ArrowRight yields moveRight > 0 (moves RIGHT on screen).
+      // Pulling joystick LEFT (virtualMoveX < 0) or pressing A/ArrowLeft yields moveRight < 0 (moves LEFT on screen).
+      let moveForward = -this.virtualMoveY;
+      let moveRight = this.virtualMoveX;
+
+      if (this.keysPressed.has('KeyW') || this.keysPressed.has('ArrowUp')) moveForward += 1;
+      if (this.keysPressed.has('KeyS') || this.keysPressed.has('ArrowDown')) moveForward -= 1;
+      if (this.keysPressed.has('KeyD') || this.keysPressed.has('ArrowRight')) moveRight += 1;
+      if (this.keysPressed.has('KeyA') || this.keysPressed.has('ArrowLeft')) moveRight -= 1;
+
+      const isSprinting = this.keysPressed.has('ShiftLeft') && this.playerStats.stamina > 5;
+      const baseSpeed = isSprinting ? 10.2 : 7.4;
+
+      const moveResult = computeCameraRelativeMovement(
+        moveForward,
+        moveRight,
+        this.cameraYaw,
+        baseSpeed,
+        dt
+      );
+
+      if (moveResult.isMoving) {
+        this.playerRotation = stepAngleShortestArc(
+          this.playerRotation,
+          moveResult.targetRotation,
+          Math.min(1, dt * 14)
+        );
+        this.playerPos.x += moveResult.dx;
+        this.playerPos.z += moveResult.dz;
+
+        // Animated walk cycle
+        const walkCycle = performance.now() * 0.011;
+        this.hunter.leftLeg.rotation.x = Math.sin(walkCycle) * 0.65;
+        this.hunter.rightLeg.rotation.x = -Math.sin(walkCycle) * 0.65;
+        if (!this.isAttacking) {
+          this.hunter.leftArm.rotation.x = -Math.sin(walkCycle) * 0.45;
+          this.hunter.rightArm.rotation.x = Math.sin(walkCycle) * 0.45;
+        }
+      } else {
+        this.hunter.leftLeg.rotation.x *= 0.82;
+        this.hunter.rightLeg.rotation.x *= 0.82;
+        if (!this.isAttacking) {
+          this.hunter.leftArm.rotation.x *= 0.82;
+          this.hunter.rightArm.rotation.x *= 0.82;
+        }
+      }
+    }
+
+    // Clamp to Expanded 420x420 Island Bounds (-125 to +125)
+    this.playerPos.x = Math.max(-125, Math.min(125, this.playerPos.x));
+    this.playerPos.z = Math.max(-125, Math.min(125, this.playerPos.z));
+    const groundY = this.terrain.getHeight(this.playerPos.x, this.playerPos.z);
+    // Keep hunter wading above water surface if in shallow ocean
+    this.playerPos.y = Math.max(-0.2, groundY);
+
+    this.hunter.root.position.copy(this.playerPos);
+    this.hunter.root.rotation.y = this.playerRotation;
+
+    // Spear Attack Hit Detection
+    if (this.isAttacking) {
+      this.attackTimer -= dt;
+      const swingProgress = 1 - this.attackTimer / (this.isHeavyAttack ? 0.48 : 0.34);
+      this.hunter.rightArm.rotation.x = -Math.sin(swingProgress * Math.PI) * 1.45;
+      this.hunter.weaponMount.position.z = 0.1 + Math.sin(swingProgress * Math.PI) * 0.85;
+
+      if (swingProgress > 0.25 && swingProgress < 0.8) {
+        this.evaluateSpearHits();
+      }
+
+      if (this.attackTimer <= 0) {
+        this.isAttacking = false;
+        this.hunter.rightArm.rotation.x = 0;
+        this.hunter.weaponMount.position.z = 0.1;
+      }
+    }
+
+    this.callbacks.onStatsChange(this.playerStats);
+  }
+
+  private evaluateSpearHits() {
+    const weapon = WEAPON_REGISTRY[this.equippedWeapon];
+    const tipX = this.playerPos.x + Math.sin(this.playerRotation) * weapon.reach;
+    const tipZ = this.playerPos.z + Math.cos(this.playerRotation) * weapon.reach;
+
+    for (const actor of this.beasts) {
+      if (actor.state.hp <= 0 || actor.hitThisSwing) continue;
+      const dist = Math.hypot(tipX - actor.state.x, tipZ - actor.state.z);
+      if (dist > 4.2) continue;
+
+      actor.hitThisSwing = true;
+
+      // Check Weak Points
+      let wpMult = 1.0;
+      let hitWpId: string | null = null;
+      for (const wp of actor.state.weakPoints) {
+        if (wp.broken) continue;
+        const cosR = Math.cos(actor.state.rotation);
+        const sinR = Math.sin(actor.state.rotation);
+        const wpWorldX = actor.state.x + wp.localOffset.x * cosR + wp.localOffset.z * sinR;
+        const wpWorldZ = actor.state.z - wp.localOffset.x * sinR + wp.localOffset.z * cosR;
+        if (Math.hypot(tipX - wpWorldX, tipZ - wpWorldZ) <= wp.radius + 1.2) {
+          wpMult = wp.damageMultiplier;
+          hitWpId = wp.id;
+          break;
+        }
+      }
+
+      const dmgRes = calculateDamage({
+        weaponDamage: weapon.baseDamage,
+        isHeavyAttack: this.isHeavyAttack,
+        heavyMultiplier: weapon.heavyMultiplier,
+        weakPointMultiplier: wpMult,
+        isEnraged: actor.state.enraged,
+        isStaggered: actor.state.aiState === 'staggered',
+        critRoll: Math.random(),
+        critChance: weapon.critChance,
+        difficulty: 'hunter',
+      });
+
+      actor.state.hp = Math.max(0, actor.state.hp - dmgRes.finalDamage);
+      sound.playHitImpact(dmgRes.isWeakPointHit, dmgRes.isCrit);
+      this.spawnParticles(
+        actor.state.x,
+        actor.state.y + 1.6,
+        actor.state.z,
+        dmgRes.isWeakPointHit ? 0xfbbf24 : 0xef4444,
+        10
+      );
+
+      if (hitWpId) {
+        const idx = actor.state.weakPoints.findIndex((w) => w.id === hitWpId);
+        if (idx >= 0) {
+          const res = applyWeakPointDamage(actor.state.weakPoints[idx], dmgRes.finalDamage);
+          actor.state.weakPoints[idx] = res.updated;
+          if (res.justBroke) {
+            actor.state.aiState = 'staggered';
+            actor.state.stateTimer = 3.6;
+            sound.playPartBreak();
+            const bonusMat = res.updated.bonusDropMaterialId;
+            this.inventoryMaterials[bonusMat] = (this.inventoryMaterials[bonusMat] || 0) + 1;
+            this.callbacks.onNotification(
+              `Part Broken: ${res.updated.name}! Beast Staggered! (+1 ${bonusMat.replace('_', ' ')})`,
+              'loot'
+            );
+          }
+        }
+      }
+
+      if (!actor.state.enraged && actor.state.hp > 0 && actor.state.hp < actor.state.maxHp * 0.45) {
+        actor.state.enraged = true;
+        actor.state.aiState = 'enraged_roar';
+        actor.state.stateTimer = 1.6;
+        sound.playBeastRoar(actor.state.species);
+        this.cameraShakeIntensity = 0.45;
+        this.callbacks.onNotification(`${actor.state.name} is ENRAGED!`, 'danger');
+      }
+
+      if (actor.state.hp <= 0) {
+        actor.state.aiState = 'dead';
+        actor.rig.root.rotation.z = Math.PI / 2.2;
+        actor.rig.root.position.y = actor.state.y + 0.5;
+        if (!this.beastsHunted.includes(actor.state.species)) {
+          this.beastsHunted.push(actor.state.species);
+        }
+        this.upgradeKnowledge(actor.state.species, 'mastered');
+        this.advanceQuestOnKill(actor.state.species);
+        this.callbacks.onNotification(
+          `Slain: ${actor.state.name}! Approach and press [E] to Carve materials.`,
+          'loot'
+        );
+      }
+
+      this.callbacks.onTargetChange(actor.state);
+    }
+  }
+
+  private advanceQuestOnKill(species: BeastSpecies) {
+    if ((species === 'raptor' || species === 'snapjaw') && this.currentQuestIndex === 0) {
+      this.currentQuestIndex = 1;
+    } else if ((species === 'brontoshell' || species === 'frostfang') && this.currentQuestIndex <= 2) {
+      this.currentQuestIndex = 3;
+    } else if (species === 'thunderhorn' && this.currentQuestIndex <= 3) {
+      this.currentQuestIndex = 4;
+    } else if (species === 'caldera_titan' && this.currentQuestIndex <= 4) {
+      this.currentQuestIndex = 5;
+    }
+    this.callbacks.onQuestUpdate(this.currentQuestIndex);
+  }
+
+  private updateBeasts(dt: number) {
+    let closestBeast: BeastState | null = null;
+    let closestDist = 42;
+
+    for (const actor of this.beasts) {
+      const s = actor.state;
+      if (s.hp <= 0) {
+        const dDead = Math.hypot(this.playerPos.x - s.x, this.playerPos.z - s.z);
+        if (dDead < 8 && !s.carved) closestBeast = s;
+        continue;
+      }
+
+      const distToPlayer = Math.hypot(this.playerPos.x - s.x, this.playerPos.z - s.z);
+      if (distToPlayer < closestDist) {
+        closestDist = distToPlayer;
+        closestBeast = s;
+      }
+
+      // Check snare traps
+      for (const trap of this.traps) {
+        if (trap.active && Math.hypot(s.x - trap.x, s.z - trap.z) < 2.2) {
+          trap.active = false;
+          trap.mesh.visible = false;
+          s.snaredTimer = 4.5;
+          s.aiState = 'staggered';
+          s.stateTimer = 4.5;
+          sound.playPartBreak();
+          this.callbacks.onNotification(`${s.name} caught in Sinew Snare Trap!`, 'loot');
+        }
+      }
+
+      if (s.snaredTimer > 0) {
+        s.snaredTimer -= dt;
+      }
+
+      // AI State Machine
+      s.stateTimer -= dt;
+      const toPlayerX = this.playerPos.x - s.x;
+      const toPlayerZ = this.playerPos.z - s.z;
+      const angleToPlayer = Math.atan2(toPlayerX, toPlayerZ);
+
+      if (s.aiState === 'staggered' || s.aiState === 'enraged_roar') {
+        if (s.stateTimer <= 0) {
+          s.aiState = 'chase';
+        }
+      } else if (s.aiState === 'patrol') {
+        actor.patrolAngle += dt * 0.45;
+        const targetX = actor.homeX + Math.cos(actor.patrolAngle) * 7;
+        const targetZ = actor.homeZ + Math.sin(actor.patrolAngle) * 7;
+        const dx = targetX - s.x;
+        const dz = targetZ - s.z;
+        s.rotation = stepAngleShortestArc(s.rotation, Math.atan2(dx, dz), dt * 4);
+        s.x += Math.sin(s.rotation) * 2.4 * dt;
+        s.z += Math.cos(s.rotation) * 2.4 * dt;
+
+        if (distToPlayer < 22) {
+          s.aiState = 'chase';
+          this.upgradeKnowledge(s.species, 'sighted');
+          sound.playBeastRoar(s.species);
+        }
+      } else if (s.aiState === 'chase') {
+        s.rotation = stepAngleShortestArc(s.rotation, angleToPlayer, dt * 6);
+        const moveSpeed = s.enraged ? 6.2 : 4.6;
+        if (distToPlayer > 4.2) {
+          s.x += Math.sin(s.rotation) * moveSpeed * dt;
+          s.z += Math.cos(s.rotation) * moveSpeed * dt;
+        } else {
+          s.aiState = 'telegraph_charge';
+          s.stateTimer = s.enraged ? 0.75 : 1.05;
+          actor.chargeDirX = Math.sin(angleToPlayer);
+          actor.chargeDirZ = Math.cos(angleToPlayer);
+        }
+        if (distToPlayer > 36) {
+          s.aiState = 'patrol';
+        }
+      } else if (s.aiState === 'telegraph_charge') {
+        // Rear back / open jaw windup tell
+        actor.rig.head.rotation.x = -0.35;
+        actor.rig.jaw.rotation.x = 0.45;
+        if (s.stateTimer <= 0) {
+          actor.rig.head.rotation.x = 0;
+          actor.rig.jaw.rotation.x = 0;
+          s.aiState = 'attack_charge';
+          s.stateTimer = 0.65;
+        }
+      } else if (s.aiState === 'attack_charge') {
+        const dashSpeed = s.enraged ? 15.5 : 12.2;
+        s.x += actor.chargeDirX * dashSpeed * dt;
+        s.z += actor.chargeDirZ * dashSpeed * dt;
+
+        // Check player hit
+        if (Math.hypot(this.playerPos.x - s.x, this.playerPos.z - s.z) < 2.9) {
+          const elapsedDodge = 0.46 - this.dodgeTimer;
+          if (!this.isDodging || !isDodgeInvulnerable(elapsedDodge, 0.46)) {
+            const rawDmg = s.species === 'caldera_titan' ? 38 : s.species === 'frostfang' ? 32 : 24;
+            const taken = calculatePlayerDamageTaken(rawDmg, this.playerStats.defense, 'hunter');
+            this.playerStats.hp = Math.max(0, this.playerStats.hp - taken);
+            this.cameraShakeIntensity = 0.35;
+            sound.playPlayerHurt();
+            this.callbacks.onStatsChange(this.playerStats);
+            s.stateTimer = 0;
+            if (this.playerStats.hp <= 0) {
+              this.callbacks.onDefeat();
+            }
+          }
+        }
+
+        if (s.stateTimer <= 0) {
+          s.aiState = 'chase';
+          s.stateTimer = 1.2;
+        }
+      }
+
+      s.y = this.terrain.getHeight(s.x, s.z);
+      actor.rig.root.position.set(s.x, s.y, s.z);
+      actor.rig.root.rotation.y = s.rotation;
+
+      // Leg & Tail animation
+      const animT = performance.now() * 0.008;
+      actor.rig.tail.rotation.y = Math.sin(animT) * 0.22;
+      actor.rig.legs.forEach((leg, idx) => {
+        leg.rotation.x = Math.sin(animT + idx * Math.PI) * 0.32;
+      });
+    }
+
+    this.callbacks.onTargetChange(closestBeast);
+  }
+
+  private updateProjectilesAndParticles(dt: number) {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      p.age += dt;
+      if (!p.landed) {
+        p.vy -= 18 * dt;
+        p.mesh.position.x += p.vx * dt;
+        p.mesh.position.y += p.vy * dt;
+        p.mesh.position.z += p.vz * dt;
+        const gy = this.terrain.getHeight(p.mesh.position.x, p.mesh.position.z);
+        if (p.mesh.position.y <= gy + 0.15) {
+          p.mesh.position.y = gy + 0.15;
+          p.landed = true;
+          // Lure nearby beasts
+          for (const b of this.beasts) {
+            if (b.state.hp > 0 && Math.hypot(b.state.x - p.mesh.position.x, b.state.z - p.mesh.position.z) < 22) {
+              b.homeX = p.mesh.position.x;
+              b.homeZ = p.mesh.position.z;
+            }
+          }
+        }
+      } else if (p.age > 4) {
+        this.scene.remove(p.mesh);
+        this.projectiles.splice(i, 1);
+      }
+    }
+
+    for (const part of this.particles) {
+      if (part.life > 0) {
+        part.life -= dt;
+        part.vy -= 9.8 * dt;
+        part.mesh.position.x += part.vx * dt;
+        part.mesh.position.y += part.vy * dt;
+        part.mesh.position.z += part.vz * dt;
+        if (part.life <= 0) {
+          part.mesh.visible = false;
+        }
+      }
+    }
+  }
+
+  private updateCamera(dt: number) {
+    const camX =
+      this.playerPos.x - Math.sin(this.cameraYaw) * Math.cos(this.cameraPitch) * this.cameraDistance;
+    const camZ =
+      this.playerPos.z - Math.cos(this.cameraYaw) * Math.cos(this.cameraPitch) * this.cameraDistance;
+    const desiredY = this.playerPos.y + 1.8 + Math.sin(this.cameraPitch) * this.cameraDistance;
+    const groundAtCam = this.terrain.getHeight(camX, camZ) + 0.85;
+    let camY = Math.max(groundAtCam, desiredY);
+
+    if (this.cameraShakeIntensity > 0) {
+      camY += (Math.random() - 0.5) * this.cameraShakeIntensity;
+      this.cameraShakeIntensity = Math.max(0, this.cameraShakeIntensity - dt * 1.8);
+    }
+
+    this.camera.position.set(camX, camY, camZ);
+    this.camera.lookAt(this.playerPos.x, this.playerPos.y + 1.5, this.playerPos.z);
+  }
+
+  private checkInteractPrompts() {
+    for (const npc of this.npcs) {
+      if (Math.hypot(this.playerPos.x - npc.data.x, this.playerPos.z - npc.data.z) < 4.2) {
+        this.callbacks.onInteractPrompt(`Press [E] or Tap to Speak with ${npc.data.name}`);
+        return;
+      }
+    }
+    if (Math.hypot(this.playerPos.x - 0, this.playerPos.z - 28) < 5.2) {
+      this.callbacks.onInteractPrompt('Press [E] or Tap to Rest at Campfire & Craft');
+      return;
+    }
+    if (Math.hypot(this.playerPos.x - 0, this.playerPos.z - 5) < 6.0) {
+      this.callbacks.onInteractPrompt('Press [E] or Tap to Ignite Ancient Signal Tower');
+      return;
+    }
+    for (const actor of this.beasts) {
+      if (
+        actor.state.hp <= 0 &&
+        !actor.state.carved &&
+        Math.hypot(this.playerPos.x - actor.state.x, this.playerPos.z - actor.state.z) < 5.2
+      ) {
+        this.callbacks.onInteractPrompt(`Press [E] or Tap to Carve ${actor.state.name}`);
+        return;
+      }
+    }
+    for (const c of this.clues) {
+      if (
+        !c.data.discovered &&
+        Math.hypot(this.playerPos.x - c.data.x, this.playerPos.z - c.data.z) < 4.2
+      ) {
+        this.callbacks.onInteractPrompt('Press [E] or Tap to Inspect Beast Tracks');
+        return;
+      }
+    }
+    this.callbacks.onInteractPrompt(null);
+  }
+
+  public handleResize() {
+    if (!this.container) return;
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(w, h);
+  }
+
+  public dispose() {
+    cancelAnimationFrame(this.animFrameId);
+    window.removeEventListener('keydown', this.onKeyDown);
+    window.removeEventListener('keyup', this.onKeyUp);
+    this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown);
+    window.removeEventListener('pointermove', this.onPointerMove);
+    window.removeEventListener('pointerup', this.onPointerUp);
+    this.materialCache.dispose();
     this.renderer.dispose();
+    if (this.renderer.domElement.parentNode === this.container) {
+      this.container.removeChild(this.renderer.domElement);
+    }
   }
 }

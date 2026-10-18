@@ -19,6 +19,7 @@ export const WEATHER_CONDITIONS: Record<WeatherType, WeatherCondition> = {
     beastAwarenessMod: 1.0,
     beastSpeedMod: 1.0,
     scentDecayRate: 1.0,
+    staminaMultiplier: 1.0,
   },
   heavy_rain: {
     type: 'heavy_rain',
@@ -31,6 +32,7 @@ export const WEATHER_CONDITIONS: Record<WeatherType, WeatherCondition> = {
     beastAwarenessMod: 0.7,
     beastSpeedMod: 0.95,
     scentDecayRate: 2.2,
+    staminaMultiplier: 0.9,
   },
   dense_fog: {
     type: 'dense_fog',
@@ -43,6 +45,7 @@ export const WEATHER_CONDITIONS: Record<WeatherType, WeatherCondition> = {
     beastAwarenessMod: 0.55,
     beastSpeedMod: 0.9,
     scentDecayRate: 0.8,
+    staminaMultiplier: 0.95,
   },
   ash_storm: {
     type: 'ash_storm',
@@ -55,6 +58,7 @@ export const WEATHER_CONDITIONS: Record<WeatherType, WeatherCondition> = {
     beastAwarenessMod: 1.25,
     beastSpeedMod: 1.2,
     scentDecayRate: 1.4,
+    staminaMultiplier: 0.85,
   },
 };
 
@@ -126,8 +130,8 @@ export class WeatherSystem {
   public update(
     dt: number,
     playerPos: THREE.Vector3,
-    sunLight: THREE.DirectionalLight,
-    scene: THREE.Scene
+    sunLight?: THREE.DirectionalLight,
+    scene?: THREE.Scene
   ): WeatherCondition {
     this.weatherTimer += dt;
     if (this.weatherTimer > this.weatherDuration) {
@@ -141,14 +145,16 @@ export class WeatherSystem {
     const currentConfig = WEATHER_CONDITIONS[this.currentWeather];
 
     // Smoothly interpolate scene fog and sky
-    if (scene.fog instanceof THREE.FogExp2) {
+    if (scene && scene.fog instanceof THREE.FogExp2) {
       scene.fog.density = THREE.MathUtils.damp(scene.fog.density, currentConfig.fogDensity, 1.5, dt);
       scene.fog.color.lerp(new THREE.Color(currentConfig.fogColor), dt * 1.5);
     }
-    if (scene.background instanceof THREE.Color) {
+    if (scene && scene.background instanceof THREE.Color) {
       scene.background.lerp(new THREE.Color(currentConfig.skyColor), dt * 1.5);
     }
-    sunLight.intensity = THREE.MathUtils.damp(sunLight.intensity, currentConfig.sunIntensity, 2.0, dt);
+    if (sunLight) {
+      sunLight.intensity = THREE.MathUtils.damp(sunLight.intensity, currentConfig.sunIntensity, 2.0, dt);
+    }
 
     // Update Weather Particles around the player
     const showRain = this.currentWeather === 'heavy_rain';

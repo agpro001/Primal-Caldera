@@ -3,479 +3,545 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import type { BeastSpecies, BeastKnowledgeLevel } from '../types/game.ts';
-import { BEASTOPEDIA_ENTRIES } from '../game/logic/beastopediaData.ts';
+import {
+  X,
+  BookOpen,
+  ShieldAlert,
+  Crosshair,
+  Sparkles,
+  Award,
+  Users,
+  Mountain,
+  RotateCcw,
+  Image as ImageIcon,
+} from 'lucide-react';
+import type { BeastSpecies, BeastKnowledgeLevel, NPCId } from '../types/game.ts';
+import {
+  BEASTOPEDIA_ENTRIES,
+  CHARACTER_ATLAS_ENTRIES,
+  ENVIRONMENT_ATLAS_ENTRIES,
+  EnvironmentModelId,
+} from '../game/logic/beastopediaData.ts';
 import { MaterialCache } from '../game/graphics/materials.ts';
-import { buildBeastModel, BeastRig } from '../game/graphics/proceduralModels.ts';
+import {
+  buildBeastModel,
+  buildHunterModel,
+  buildTribalNPCModel,
+  buildEnvironmentShowcaseModel,
+} from '../game/graphics/proceduralModels.ts';
+import { render2DReferenceCardDataURL } from '../game/graphics/referenceArt.ts';
 
 interface BeastopediaModalProps {
   knowledge: Record<BeastSpecies, BeastKnowledgeLevel>;
+  beastsHunted: BeastSpecies[];
   onClose: () => void;
 }
 
-export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({ knowledge, onClose }) => {
+type AtlasCategory = 'beasts' | 'characters' | 'environment';
+
+const SPECIES_LIST: BeastSpecies[] = [
+  'raptor',
+  'snapjaw',
+  'brontoshell',
+  'frostfang',
+  'thunderhorn',
+  'caldera_titan',
+];
+
+export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
+  knowledge,
+  beastsHunted,
+  onClose,
+}) => {
+  const [category, setCategory] = useState<AtlasCategory>('beasts');
   const [selectedSpecies, setSelectedSpecies] = useState<BeastSpecies>('raptor');
-  const [activeTab, setActiveTab] = useState<'lore' | 'tells' | 'weaknesses' | 'drops' | 'strategy'>('lore');
-  const [showWeakPoints, setShowWeakPoints] = useState(true);
-  const [previewEnraged, setPreviewEnraged] = useState(false);
+  const [selectedCharacterId, setSelectedCharacterId] = useState<NPCId | 'hunter_koa'>('hunter_koa');
+  const [selectedEnvId, setSelectedEnvId] = useState<EnvironmentModelId>('snow_mountain');
+  const [showConceptSheet, setShowConceptSheet] = useState<boolean>(true);
 
-  const viewerMountRef = useRef<HTMLDivElement>(null);
-  const viewerSceneRef = useRef<{
-    renderer: THREE.WebGLRenderer;
-    scene: THREE.Scene;
-    camera: THREE.PerspectiveCamera;
-    rig: BeastRig;
-    matCache: MaterialCache;
-    turntableAngle: number;
-    isDragging: boolean;
-    lastMouseX: number;
-    animId: number;
-  } | null>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
+  const rotationOffsetRef = useRef<number>(0.45);
+  const isDraggingRef = useRef<boolean>(false);
+  const lastXRef = useRef<number>(0);
 
-  const entry = BEASTOPEDIA_ENTRIES[selectedSpecies];
-  const level = knowledge[selectedSpecies] || 'tracked';
-
-  // Initialize and update 3D Turntable Preview
+  // Interactive 3D Turntable Preview for Creatures, Characters, and 3D Environment Models
   useEffect(() => {
-    if (!viewerMountRef.current) return;
+    const container = previewContainerRef.current;
+    if (!container) return;
 
-    const width = viewerMountRef.current.clientWidth || 360;
-    const height = viewerMountRef.current.clientHeight || 280;
+    const width = container.clientWidth || 320;
+    const height = container.clientHeight || 240;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    viewerMountRef.current.replaceChildren(renderer.domElement);
+    container.innerHTML = '';
+    container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x131114);
+    const camera = new THREE.PerspectiveCamera(44, width / height, 0.1, 100);
+    camera.position.set(0, 2.4, 7.2);
+    camera.lookAt(0, 1.0, 0);
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 50);
-    camera.position.set(0, 2.5, selectedSpecies === 'caldera_titan' ? 12 : selectedSpecies === 'brontoshell' ? 9 : 6.5);
-    camera.lookAt(0, 1.2, 0);
+    const hemi = new THREE.HemisphereLight(0xffedd5, 0x1e293b, 1.05);
+    scene.add(hemi);
 
-    // Studio 3-point lighting
-    const keyLight = new THREE.DirectionalLight(0xffedd5, 2.0);
-    keyLight.position.set(5, 8, 5);
-    scene.add(keyLight);
+    const dir = new THREE.DirectionalLight(0xfff7ed, 1.65);
+    dir.position.set(5, 8, 6);
+    scene.add(dir);
 
-    const fillLight = new THREE.HemisphereLight(0x93c5fd, 0x1f2937, 1.0);
-    scene.add(fillLight);
-
-    const rimLight = new THREE.DirectionalLight(0xf59e0b, 1.5);
-    rimLight.position.set(-5, 4, -5);
-    scene.add(rimLight);
-
-    // Pedestal
-    const pedGeo = new THREE.CylinderGeometry(4.0, 4.2, 0.4, 16);
-    const pedMat = new THREE.MeshStandardMaterial({ color: 0x221d1b, roughness: 0.8 });
-    const ped = new THREE.Mesh(pedGeo, pedMat);
-    ped.position.y = -0.2;
-    scene.add(ped);
+    const rim = new THREE.DirectionalLight(0x38bdf8, 0.85);
+    rim.position.set(-5, 4, -5);
+    scene.add(rim);
 
     const matCache = new MaterialCache();
-    const rig = buildBeastModel(selectedSpecies, matCache);
-    scene.add(rig.root);
+    const rootHolder = new THREE.Group();
+    scene.add(rootHolder);
 
-    let turntableAngle = 0.5;
-    let isDragging = false;
-    let lastMouseX = 0;
-
-    const onMouseDown = (e: MouseEvent) => {
-      isDragging = true;
-      lastMouseX = e.clientX;
-    };
-    const onMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
-        const dx = e.clientX - lastMouseX;
-        lastMouseX = e.clientX;
-        turntableAngle += dx * 0.015;
+    if (category === 'beasts') {
+      const rig = buildBeastModel(selectedSpecies, matCache);
+      const scale =
+        selectedSpecies === 'caldera_titan'
+          ? 0.56
+          : selectedSpecies === 'frostfang' || selectedSpecies === 'thunderhorn'
+          ? 0.66
+          : selectedSpecies === 'snapjaw' || selectedSpecies === 'brontoshell'
+          ? 0.72
+          : 0.92;
+      rig.root.scale.setScalar(scale);
+      rig.root.position.y = -0.35;
+      rootHolder.add(rig.root);
+    } else if (category === 'characters') {
+      if (selectedCharacterId === 'hunter_koa') {
+        const hunter = buildHunterModel(matCache);
+        hunter.updateWeapon('caldera_fang_glaive');
+        hunter.updateArmor('thunder_warden_aegis');
+        hunter.root.scale.setScalar(1.38);
+        hunter.root.position.y = -0.35;
+        rootHolder.add(hunter.root);
+      } else {
+        const npcGroup = buildTribalNPCModel(selectedCharacterId, matCache);
+        npcGroup.scale.setScalar(1.38);
+        npcGroup.position.y = -0.35;
+        rootHolder.add(npcGroup);
       }
-    };
-    const onMouseUp = () => {
-      isDragging = false;
-    };
+    } else {
+      const envGroup = buildEnvironmentShowcaseModel(selectedEnvId, matCache);
+      envGroup.scale.setScalar(1.15);
+      envGroup.position.y = 0.75;
+      rootHolder.add(envGroup);
+    }
 
-    const dom = renderer.domElement;
-    dom.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+    // Turntable pedestal ring
+    const ringGeo = new THREE.TorusGeometry(2.15, 0.04, 8, 36);
+    ringGeo.rotateX(Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+    const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+    ringMesh.position.y = -0.35;
+    scene.add(ringMesh);
 
-    // Touch support for mobile 3D model inspection
-    const onTouchStart = (e: TouchEvent) => {
-      isDragging = true;
-      lastMouseX = e.touches[0].clientX;
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      if (isDragging) {
-        const dx = e.touches[0].clientX - lastMouseX;
-        lastMouseX = e.touches[0].clientX;
-        turntableAngle += dx * 0.02;
+    let frameId = 0;
+    const animate = () => {
+      frameId = requestAnimationFrame(animate);
+      if (!isDraggingRef.current) {
+        rotationOffsetRef.current += 0.0085;
       }
-    };
-    const onTouchEnd = () => {
-      isDragging = false;
-    };
-    dom.addEventListener('touchstart', onTouchStart);
-    dom.addEventListener('touchmove', onTouchMove);
-    dom.addEventListener('touchend', onTouchEnd);
-
-    let animId = 0;
-    const renderLoop = () => {
-      animId = requestAnimationFrame(renderLoop);
-      if (!isDragging) {
-        turntableAngle += 0.006; // gentle idle turntable spin
-      }
-      rig.root.rotation.y = turntableAngle;
-
-      // Subtle breathing motion
-      rig.torso.position.y += Math.sin(performance.now() * 0.003) * 0.001;
-
+      rootHolder.rotation.y = rotationOffsetRef.current;
       renderer.render(scene, camera);
     };
-    animId = requestAnimationFrame(renderLoop);
-
-    viewerSceneRef.current = {
-      renderer,
-      scene,
-      camera,
-      rig,
-      matCache,
-      turntableAngle,
-      isDragging,
-      lastMouseX,
-      animId,
-    };
+    animate();
 
     return () => {
-      cancelAnimationFrame(animId);
-      dom.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      dom.removeEventListener('touchstart', onTouchStart);
-      dom.removeEventListener('touchmove', onTouchMove);
-      dom.removeEventListener('touchend', onTouchEnd);
+      cancelAnimationFrame(frameId);
+      matCache.dispose();
       renderer.dispose();
     };
-  }, [selectedSpecies]);
+  }, [category, selectedSpecies, selectedCharacterId, selectedEnvId]);
 
-  // Handle weak point and enrage preview toggles
-  useEffect(() => {
-    if (viewerSceneRef.current) {
-      viewerSceneRef.current.rig.setEnraged(previewEnraged);
-    }
-  }, [previewEnraged]);
+  const handlePointerDown = (e: React.PointerEvent) => {
+    isDraggingRef.current = true;
+    lastXRef.current = e.clientX;
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingRef.current) return;
+    const dx = e.clientX - lastXRef.current;
+    lastXRef.current = e.clientX;
+    rotationOffsetRef.current += dx * 0.012;
+  };
+
+  const handlePointerUp = () => {
+    isDraggingRef.current = false;
+  };
+
+  const beastEntry = BEASTOPEDIA_ENTRIES[selectedSpecies];
+  const beastLevel = knowledge[selectedSpecies] || 'tracked';
+  const isSlain = beastsHunted.includes(selectedSpecies);
+
+  const selectedChar =
+    CHARACTER_ATLAS_ENTRIES.find((c) => c.id === selectedCharacterId) || CHARACTER_ATLAS_ENTRIES[0];
+  const selectedEnv =
+    ENVIRONMENT_ATLAS_ENTRIES.find((e) => e.id === selectedEnvId) || ENVIRONMENT_ATLAS_ENTRIES[0];
+
+  const activeItemId =
+    category === 'beasts'
+      ? selectedSpecies
+      : category === 'characters'
+      ? selectedCharacterId
+      : selectedEnvId;
+  const conceptRef = {
+    url: render2DReferenceCardDataURL(activeItemId),
+    caption:
+      category === 'beasts'
+        ? `2D Anatomical Reference Blueprint: ${beastEntry.name}`
+        : category === 'characters'
+        ? `2D Character Reference Blueprint: ${selectedChar.name}`
+        : `2D Environment & Asset Blueprint: ${selectedEnv.name}`,
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 pointer-events-auto">
-      <div className="bg-[#141110] border border-[#443831] rounded-lg max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl text-left overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-3.5 border-b border-[#2e2621] bg-[#1a1513]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+      <div className="w-full max-w-5xl bg-stone-950/95 border border-amber-500/30 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header + Category Tabs */}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-stone-800 bg-stone-900/70">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">📖</span>
+            <BookOpen className="w-6 h-6 text-amber-400" />
             <div>
-              <h2 className="text-lg font-black text-amber-300 font-serif tracking-wider">
-                ISLAND BEASTOPEDIA
+              <h2 className="text-lg font-bold tracking-wider uppercase text-amber-100">
+                3D Island Atlas & Hunter&apos;s Beastopedia
               </h2>
-              <p className="text-xs text-zinc-400">
-                Ecosystem observations, anatomical tells, weak point analysis, and hunting lore.
+              <p className="text-xs text-stone-400">
+                Interactive 3D Models + Concept Pictures of Creatures, Characters, Mountains, Rivers & Flora
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded bg-[#27211d] hover:bg-[#3a322c] text-zinc-400 hover:text-white flex items-center justify-center text-sm font-bold transition-all"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCategory('beasts')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                category === 'beasts'
+                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-200'
+                  : 'bg-stone-900 border-stone-800 text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              <Crosshair className="w-3.5 h-3.5" />
+              Beasts (6)
+            </button>
+            <button
+              onClick={() => setCategory('characters')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                category === 'characters'
+                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-200'
+                  : 'bg-stone-900 border-stone-800 text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              Characters (4)
+            </button>
+            <button
+              onClick={() => setCategory('environment')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                category === 'environment'
+                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-200'
+                  : 'bg-stone-900 border-stone-800 text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              <Mountain className="w-3.5 h-3.5" />
+              3D World & Flora (6)
+            </button>
+
+            <button
+              onClick={() => setShowConceptSheet((v) => !v)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                showConceptSheet
+                  ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200'
+                  : 'bg-stone-900 border-stone-700 text-stone-300 hover:text-white'
+              }`}
+              title="Toggle 2D Concept Art Reference Sheet"
+            >
+              <ImageIcon className="w-3.5 h-3.5" />
+              {showConceptSheet ? 'Hide 2D Pic' : 'View 2D Pic'}
+            </button>
+
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg bg-stone-800/80 hover:bg-stone-700 text-stone-300 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        {/* Species Select Bar */}
-        <div className="flex border-b border-[#2e2621] bg-[#120f0e] px-6 gap-2 overflow-x-auto py-2">
-          {(['raptor', 'brontoshell', 'thunderhorn', 'caldera_titan'] as const).map((sp) => {
-            const ent = BEASTOPEDIA_ENTRIES[sp];
-            const isSelected = selectedSpecies === sp;
-            const kLevel = knowledge[sp] || 'tracked';
-            return (
-              <button
-                key={sp}
-                type="button"
-                onClick={() => setSelectedSpecies(sp)}
-                className={`py-2 px-3.5 rounded text-xs font-bold whitespace-nowrap transition-all flex items-center gap-2 border ${
-                  isSelected
-                    ? 'bg-amber-600 text-black border-amber-400 shadow'
-                    : 'bg-[#1b1715] text-zinc-300 border-[#382f28] hover:border-amber-600/50'
-                }`}
-              >
-                <span>{ent.name.split(' ')[0]}</span>
-                <span
-                  className={`text-[9px] px-1.5 py-0.2 rounded font-mono uppercase ${
-                    kLevel === 'mastered'
-                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                      : kLevel === 'observed'
-                      ? 'bg-amber-950 text-amber-300 border border-amber-800'
-                      : 'bg-zinc-800 text-zinc-400'
-                  }`}
-                >
-                  {kLevel}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+          {/* Left Sidebar Selector */}
+          <div className="w-full md:w-64 border-b md:border-b-0 md:border-r border-stone-800 bg-stone-900/40 p-3 flex md:flex-col gap-2 overflow-x-auto md:overflow-y-auto">
+            {category === 'beasts' &&
+              SPECIES_LIST.map((sp) => {
+                const e = BEASTOPEDIA_ENTRIES[sp];
+                const active = selectedSpecies === sp;
+                const slain = beastsHunted.includes(sp);
+                return (
+                  <button
+                    key={sp}
+                    onClick={() => setSelectedSpecies(sp)}
+                    className={`flex-shrink-0 md:w-full text-left p-3 rounded-lg border transition-all cursor-pointer ${
+                      active
+                        ? 'bg-amber-950/50 border-amber-500/60 text-amber-100'
+                        : 'bg-stone-900/60 border-stone-800/80 text-stone-400 hover:bg-stone-800/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-sm">{e.name}</span>
+                      {slain && <Award className="w-4 h-4 text-amber-400 shrink-0" />}
+                    </div>
+                    <div className="text-[11px] text-stone-400 mt-0.5">{e.biomeName}</div>
+                    <div className="flex items-center gap-1 mt-1.5">
+                      {Array.from({ length: e.threatLevel }).map((_, i) => (
+                        <span key={i} className="w-2 h-2 rounded-full bg-amber-500" />
+                      ))}
+                    </div>
+                  </button>
+                );
+              })}
 
-        {/* Modal Main Body: 3D Turntable Left + Knowledge Tabs Right */}
-        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-          {/* Left: 3D Model Turntable Viewer */}
-          <div className="w-full md:w-5/12 bg-[#0e0d0f] border-b md:border-b-0 md:border-r border-[#2e2621] flex flex-col relative p-4">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                Interactive 3D Anatomy (Drag to Rotate)
-              </span>
-              <span className="text-[10px] font-mono font-bold text-amber-400 uppercase px-2 py-0.5 rounded bg-amber-950/80 border border-amber-800">
-                {entry.threatLevel}
-              </span>
-            </div>
+            {category === 'characters' &&
+              CHARACTER_ATLAS_ENTRIES.map((ch) => {
+                const active = selectedCharacterId === ch.id;
+                return (
+                  <button
+                    key={ch.id}
+                    onClick={() => setSelectedCharacterId(ch.id)}
+                    className={`flex-shrink-0 md:w-full text-left p-3 rounded-lg border transition-all cursor-pointer ${
+                      active
+                        ? 'bg-amber-950/50 border-amber-500/60 text-amber-100'
+                        : 'bg-stone-900/60 border-stone-800/80 text-stone-400 hover:bg-stone-800/60'
+                    }`}
+                  >
+                    <div className="font-bold text-sm">{ch.name}</div>
+                    <div className="text-[11px] text-amber-400/90 mt-0.5">{ch.role}</div>
+                    <div className="text-[10px] text-stone-500 mt-0.5">{ch.biomeName}</div>
+                  </button>
+                );
+              })}
 
-            {/* 3D Canvas Container */}
-            <div
-              ref={viewerMountRef}
-              className="w-full h-56 sm:h-64 flex-1 rounded border border-[#2b2522] overflow-hidden cursor-grab active:cursor-grabbing bg-radial from-[#221c21] to-[#0d0c0e]"
-            />
-
-            {/* Turntable Control Bar */}
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => setPreviewEnraged(!previewEnraged)}
-                className={`flex-1 py-1.5 rounded text-[11px] font-bold uppercase tracking-wider border transition-all ${
-                  previewEnraged
-                    ? 'bg-red-600 text-white border-red-400 shadow'
-                    : 'bg-[#1e1917] text-zinc-300 border-[#3b312a] hover:bg-[#2b2420]'
-                }`}
-              >
-                {previewEnraged ? '🔥 Enraged Phase' : 'Normal State'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowWeakPoints(!showWeakPoints)}
-                className={`flex-1 py-1.5 rounded text-[11px] font-bold uppercase tracking-wider border transition-all ${
-                  showWeakPoints
-                    ? 'bg-amber-600 text-black border-amber-400'
-                    : 'bg-[#1e1917] text-zinc-400 border-[#3b312a]'
-                }`}
-              >
-                {showWeakPoints ? 'Weak Points: Shown' : 'Weak Points: Hidden'}
-              </button>
-            </div>
+            {category === 'environment' &&
+              ENVIRONMENT_ATLAS_ENTRIES.map((env) => {
+                const active = selectedEnvId === env.id;
+                return (
+                  <button
+                    key={env.id}
+                    onClick={() => setSelectedEnvId(env.id)}
+                    className={`flex-shrink-0 md:w-full text-left p-3 rounded-lg border transition-all cursor-pointer ${
+                      active
+                        ? 'bg-amber-950/50 border-amber-500/60 text-amber-100'
+                        : 'bg-stone-900/60 border-stone-800/80 text-stone-400 hover:bg-stone-800/60'
+                    }`}
+                  >
+                    <div className="font-bold text-sm">{env.name}</div>
+                    <div className="text-[11px] text-emerald-400/90 mt-0.5">{env.category}</div>
+                    <div className="text-[10px] text-stone-500 mt-0.5">{env.biomeName}</div>
+                  </button>
+                );
+              })}
           </div>
 
-          {/* Right: Knowledge Encyclopedia Tabs */}
-          <div className="flex-1 flex flex-col overflow-hidden bg-[#141110]">
-            {/* Tabs Header */}
-            <div className="flex border-b border-[#2e2621] bg-[#181412] px-4 gap-1 text-xs font-bold overflow-x-auto">
-              {(['lore', 'tells', 'weaknesses', 'drops', 'strategy'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  className={`py-3 px-3 uppercase tracking-wider border-b-2 whitespace-nowrap transition-all ${
-                    activeTab === tab
-                      ? 'border-amber-500 text-amber-300 bg-[#221b18]'
-                      : 'border-transparent text-zinc-400 hover:text-zinc-200'
-                  }`}
-                >
-                  {tab === 'lore'
-                    ? 'Lore & Habitat'
-                    : tab === 'tells'
-                    ? 'Tells & Attacks'
-                    : tab === 'weaknesses'
-                    ? 'Weak Points'
-                    : tab === 'drops'
-                    ? 'Carve Drops'
-                    : 'Tactics & Gear'}
-                </button>
-              ))}
-            </div>
-
-            {/* Tab Content Body */}
-            <div className="p-6 overflow-y-auto flex-1 space-y-4 text-xs">
-              {/* TAB 1: Lore */}
-              {activeTab === 'lore' && (
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-base font-bold text-amber-300 font-serif mb-1">{entry.name}</h3>
-                    <p className="text-zinc-400 italic mb-3">"{entry.title}"</p>
-                    <p className="text-zinc-300 leading-relaxed">{entry.lore}</p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                    <div className="p-3 bg-[#1d1815] border border-[#3b3028] rounded">
-                      <span className="text-[10px] uppercase font-bold text-zinc-500 block mb-1">Habitat</span>
-                      <span className="text-zinc-200 font-medium">{entry.habitat}</span>
-                    </div>
-                    <div className="p-3 bg-[#1d1815] border border-[#3b3028] rounded">
-                      <span className="text-[10px] uppercase font-bold text-zinc-500 block mb-1">Ecological Diet</span>
-                      <span className="text-zinc-200 font-medium">{entry.diet}</span>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-[#241a18] border border-red-950/80 rounded">
-                    <span className="text-[10px] uppercase font-bold text-red-400 block mb-1">
-                      Enraged State Mechanics
-                    </span>
-                    <p className="text-zinc-300 leading-relaxed">{entry.enragedBehavior}</p>
-                  </div>
+          {/* Right Detail & 3D Turntable Content */}
+          <div className="flex-1 p-6 overflow-y-auto space-y-5">
+            {showConceptSheet && (
+              <div className="bg-stone-900/90 border border-cyan-500/40 rounded-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4" />
+                    {conceptRef.caption}
+                  </span>
+                  <span className="text-[11px] text-stone-400">
+                    Generated Reference Picture → Matched to Live 3D Models Below
+                  </span>
                 </div>
-              )}
+                <img
+                  src={conceptRef.url}
+                  alt={conceptRef.caption}
+                  className="w-full max-h-60 object-contain rounded-lg border border-stone-800 bg-stone-950"
+                />
+              </div>
+            )}
 
-              {/* TAB 2: Tells & Attacks */}
-              {activeTab === 'tells' && (
-                <div className="space-y-4">
-                  <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">
-                    Observed Windup Tells & Counterplay:
-                  </span>
-                  {entry.tells.map((t, idx) => (
-                    <div key={idx} className="p-3.5 bg-[#1c1715] border border-[#382e27] rounded space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-amber-300">{t.name}</span>
-                        <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-amber-950 text-amber-400">
-                          Telegraph Window
-                        </span>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+              {/* Interactive 3D Turntable */}
+              <div
+                className="lg:col-span-5 relative h-60 rounded-xl bg-gradient-to-b from-stone-900/90 to-stone-950 border border-stone-800 overflow-hidden flex items-center justify-center select-none cursor-grab active:cursor-grabbing"
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerLeave={handlePointerUp}
+              >
+                <div ref={previewContainerRef} className="w-full h-full" />
+                <div className="absolute top-2.5 left-3 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-amber-300/90 bg-black/60 px-2 py-0.5 rounded">
+                  <RotateCcw className="w-3 h-3" />
+                  Drag to Rotate 3D Model
+                </div>
+                {category === 'beasts' && (
+                  <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between text-[11px] text-stone-400 bg-black/50 px-2.5 py-1 rounded">
+                    <span>{beastEntry.sizeLabel}</span>
+                    <span className="text-amber-400 font-semibold uppercase">
+                      {isSlain ? 'Mastered' : beastLevel}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Primary Lore & Summary */}
+              <div className="lg:col-span-7 space-y-3">
+                {category === 'beasts' && (
+                  <>
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-widest text-amber-400">
+                        {beastEntry.biomeName} · {beastEntry.diet}
                       </div>
-                      <p className="text-zinc-300 leading-relaxed">{t.description}</p>
-                      <div className="pt-1.5 border-t border-[#2e2621] text-emerald-300 font-medium">
-                        <span className="font-bold text-zinc-400">Hunter Counterplay: </span>
-                        {t.counterplay}
-                      </div>
+                      <h3 className="text-2xl font-black text-stone-100 mt-0.5">{beastEntry.name}</h3>
+                      <div className="text-sm italic text-stone-400">{beastEntry.title}</div>
                     </div>
-                  ))}
-
-                  <span className="text-[11px] font-bold text-red-400 uppercase tracking-wider block pt-2">
-                    Lethal Attack Modes:
-                  </span>
-                  {entry.attackModes.map((atk, idx) => (
-                    <div key={idx} className="p-3 bg-[#1d1815] border border-[#3b3028] rounded flex justify-between items-center">
-                      <div>
-                        <span className="font-bold text-zinc-200 block">{atk.name}</span>
-                        <span className="text-zinc-400 text-[11px]">{atk.danger}</span>
-                      </div>
-                      <span className="text-[10px] font-mono uppercase px-2 py-1 rounded bg-[#2e241f] text-zinc-300 border border-[#443831]">
-                        {atk.damageType}
+                    <p className="text-sm text-stone-300 leading-relaxed">{beastEntry.lore}</p>
+                    <div className="p-3 rounded-lg bg-red-950/30 border border-red-500/30 text-xs text-red-200">
+                      <span className="font-bold uppercase tracking-wider text-red-400 block mb-0.5">
+                        Enrage Behavior
                       </span>
+                      {beastEntry.enrageTrigger}
                     </div>
-                  ))}
-                </div>
-              )}
+                  </>
+                )}
 
-              {/* TAB 3: Weaknesses */}
-              {activeTab === 'weaknesses' && (
-                <div className="space-y-4">
-                  <p className="text-zinc-400 leading-relaxed">
-                    Colossal beasts have fortified armor plates that deflect careless blows. Striking the anatomical weak points deals amplified damage and can permanently sever dangerous abilities.
-                  </p>
-
-                  {entry.weaknesses.map((w, idx) => (
-                    <div key={idx} className="p-4 bg-[#1c1715] border border-[#382e27] rounded space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-amber-300 text-sm">{w.part}</span>
-                        <span className="text-xs font-mono font-black text-amber-400 px-2 py-0.5 rounded bg-amber-950 border border-amber-800">
-                          {w.multiplier}
-                        </span>
+                {category === 'characters' && (
+                  <>
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-widest text-amber-400">
+                        {selectedChar.biomeName} · {selectedChar.role}
                       </div>
-                      <div className="text-zinc-300">
-                        <span className="font-bold text-zinc-400">Break Consequence: </span>
-                        {w.breakEffect}
+                      <h3 className="text-2xl font-black text-stone-100 mt-0.5">{selectedChar.name}</h3>
+                      <div className="text-sm italic text-amber-200/80 mt-0.5">
+                        Signature Gear: {selectedChar.weaponOrTool}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-
-              {/* TAB 4: Carve Drops */}
-              {activeTab === 'drops' && (
-                <div className="space-y-3">
-                  <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block mb-2">
-                    Harvestable Materials Table:
-                  </span>
-                  {entry.harvestableDrops.map((d, idx) => (
-                    <div key={idx} className="p-3 bg-[#1c1715] border border-[#382e27] rounded flex items-center justify-between gap-4">
-                      <div>
-                        <span className="font-bold text-zinc-200 capitalize block">{d.item.replace('_', ' ')}</span>
-                        <span className="text-zinc-400 text-[11px]">{d.description}</span>
-                      </div>
-                      <span
-                        className={`text-[10px] font-mono uppercase font-bold px-2 py-1 rounded border whitespace-nowrap ${
-                          d.rarity === 'Legendary'
-                            ? 'bg-amber-950 border-amber-600 text-amber-300'
-                            : d.rarity === 'Rare'
-                            ? 'bg-purple-950 border-purple-700 text-purple-300'
-                            : d.rarity === 'Uncommon'
-                            ? 'bg-blue-950 border-blue-700 text-blue-300'
-                            : 'bg-zinc-800 border-zinc-700 text-zinc-300'
-                        }`}
-                      >
-                        {d.rarity}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* TAB 5: Tactics & Gear */}
-              {activeTab === 'strategy' && (
-                <div className="space-y-4">
-                  <div>
-                    <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block mb-2">
-                      Master Hunter Strategy Tips:
-                    </span>
-                    <ul className="space-y-2">
-                      {entry.huntingTips.map((tip, idx) => (
-                        <li key={idx} className="p-3 bg-[#1c1715] border border-[#382e27] rounded text-zinc-300 flex items-start gap-2 leading-relaxed">
-                          <span className="text-amber-500 font-bold">▸</span>
-                          <span>{tip}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div>
-                    <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-2">
-                      Forged Weapons & Armors:
-                    </span>
-                    <div className="space-y-1.5">
-                      {entry.associatedRecipes.map((r, idx) => (
-                        <div key={idx} className="p-2.5 bg-[#171311] border border-[#2d2520] rounded text-zinc-200 font-mono text-[11px] flex items-center gap-2">
-                          <span className="text-amber-400">⚔</span>
-                          <span>{r}</span>
+                    <p className="text-sm text-stone-300 leading-relaxed">{selectedChar.lore}</p>
+                    <div className="space-y-1.5 pt-1">
+                      {selectedChar.traits.map((tr, i) => (
+                        <div
+                          key={i}
+                          className="text-xs text-stone-300 bg-stone-900/70 border border-stone-800 rounded-lg px-3 py-2"
+                        >
+                          • {tr}
                         </div>
                       ))}
                     </div>
+                  </>
+                )}
+
+                {category === 'environment' && (
+                  <>
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-widest text-emerald-400">
+                        {selectedEnv.biomeName} · {selectedEnv.category}
+                      </div>
+                      <h3 className="text-2xl font-black text-stone-100 mt-0.5">{selectedEnv.name}</h3>
+                    </div>
+                    <p className="text-sm text-stone-300 leading-relaxed">{selectedEnv.description}</p>
+                    <div className="space-y-1.5 pt-1">
+                      {selectedEnv.features.map((feat, i) => (
+                        <div
+                          key={i}
+                          className="text-xs text-stone-300 bg-stone-900/70 border border-stone-800 rounded-lg px-3 py-2"
+                        >
+                          • {feat}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Extra Tactical Breakdown for Beasts */}
+            {category === 'beasts' && (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-stone-900/60 border border-stone-800 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
+                      <ShieldAlert className="w-4 h-4" />
+                      Telegraphed Attack Tells & Counters
+                    </div>
+                    {beastEntry.tells.map((t, idx) => (
+                      <div
+                        key={idx}
+                        className="border-t border-stone-800/80 pt-2.5 first:border-0 first:pt-0"
+                      >
+                        <div className="font-bold text-sm text-stone-200">{t.name}</div>
+                        <div className="text-xs text-stone-400 mt-0.5">
+                          <span className="text-amber-300 font-semibold">Visual Tell:</span> {t.cue}
+                        </div>
+                        <div className="text-xs text-emerald-300 mt-0.5">
+                          <span className="font-semibold">Counter:</span> {t.counter}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="bg-stone-900/60 border border-stone-800 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
+                      <Crosshair className="w-4 h-4" />
+                      Breakable Weak Points
+                    </div>
+                    {beastEntry.weaknesses.map((w, idx) => (
+                      <div
+                        key={idx}
+                        className="border-t border-stone-800/80 pt-2.5 first:border-0 first:pt-0"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-sm text-stone-200">{w.part}</span>
+                          <span className="text-xs font-bold text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded">
+                            {w.multiplier}
+                          </span>
+                        </div>
+                        <div className="text-xs text-stone-400 mt-1">{w.breakBonus}</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
 
-        {/* Footer */}
-        <div className="px-6 py-3 bg-[#171311] border-t border-[#2e2621] flex justify-between items-center text-xs">
-          <span className="text-zinc-500">
-            Observation Level: <span className="text-amber-400 font-bold uppercase">{level}</span>
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-5 py-2 bg-[#2d2520] hover:bg-[#3d322b] text-zinc-200 font-bold rounded transition-all"
-          >
-            Close Beastopedia [B]
-          </button>
+                <div className="bg-stone-900/40 border border-stone-800 rounded-xl p-4 flex flex-col md:flex-row gap-4 justify-between">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-300">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Veteran Hunting Tips
+                    </div>
+                    <ul className="list-disc list-inside text-xs text-stone-300 space-y-1">
+                      {beastEntry.huntingTips.map((tip, i) => (
+                        <li key={i}>{tip}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="shrink-0">
+                    <div className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-1.5">
+                      Carve & Break Drops
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {beastEntry.drops.map((d, i) => (
+                        <span
+                          key={i}
+                          className="text-xs bg-stone-800 border border-stone-700 text-amber-200 px-2.5 py-1 rounded-md"
+                        >
+                          {d}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -219,7 +219,7 @@ export const HUD: React.FC<HUDProps> = ({
 
         {/* Boss Health Bar (Centered when beast in combat) */}
         {targetBeast && targetBeast.hp > 0 && (
-          <div className="absolute left-1/2 -translate-x-1/2 top-1 w-full max-w-md px-2 pointer-events-none">
+          <div className="absolute left-1/2 -translate-x-1/2 top-12 w-full max-w-xs sm:max-w-sm px-2 pointer-events-none">
             <div className="bg-[#121115]/95 border border-[#3e3430] p-2.5 rounded shadow-2xl text-center">
               <div className="flex items-center justify-between mb-1 text-xs">
                 <span className="font-bold text-[#f3f4f6] tracking-wide flex items-center gap-1.5">
@@ -251,7 +251,7 @@ export const HUD: React.FC<HUDProps> = ({
               </div>
 
               {/* Telegraph Windup Danger Bar */}
-              {targetBeast.state === 'telegraph' && (
+              {targetBeast.aiState.startsWith('telegraph') && (
                 <div className="mt-1 flex items-center gap-1.5">
                   <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">
                     Incoming Strike!
@@ -259,7 +259,7 @@ export const HUD: React.FC<HUDProps> = ({
                   <div className="flex-1 h-1.5 bg-[#372722] rounded overflow-hidden">
                     <div
                       className="h-full bg-amber-400 transition-all duration-75"
-                      style={{ width: `${Math.min(100, targetBeast.telegraphProgress * 100)}%` }}
+                      style={{ width: `${Math.min(100, (1 - targetBeast.stateTimer) * 100)}%` }}
                     />
                   </div>
                 </div>
@@ -462,7 +462,7 @@ export const HUD: React.FC<HUDProps> = ({
             className="px-3 py-1.5 bg-[#171412]/90 hover:bg-[#28221f] active:scale-95 border border-[#443831] text-slate-300 rounded text-xs font-bold flex items-center gap-2 shadow"
           >
             <span className="w-4 h-4 rounded-full bg-slate-800 flex items-center justify-center text-[10px]">R</span>
-            <span>Stone x{stats.stones}</span>
+            <span>Stone x{stats.lureStones}</span>
           </button>
         </div>
       </footer>

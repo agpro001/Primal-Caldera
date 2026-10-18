@@ -19,501 +19,699 @@ import type {
 export const WEAPON_REGISTRY: Record<WeaponId, WeaponDef> = {
   flint_spear: {
     id: 'flint_spear',
-    name: 'Flint Spear',
-    damage: 22,
-    staminaCost: 18,
-    range: 3.2,
-    critBonus: 0.1,
-    description: 'Carved river flint lashed to charred hardwood. Reliable reach and thrust speed.',
-    materialsRequired: {},
+    name: 'Flint-Tipped Hunting Spear',
+    tier: 1,
+    baseDamage: 24,
+    heavyMultiplier: 1.75,
+    staminaCostLight: 12,
+    staminaCostHeavy: 26,
+    critChance: 0.1,
+    reach: 3.1,
+    description: 'Balanced ash-wood shaft bound with rawhide and knapped river flint.',
+    color: '#9c7a54',
+    accentColor: '#d97706',
   },
-  bone_harpoon: {
-    id: 'bone_harpoon',
-    name: 'Raptor Bone Harpoon',
-    damage: 38,
-    staminaCost: 24,
-    range: 3.5,
-    critBonus: 0.2,
-    description: 'Serrated raptor femur tip with gut-rope binding. Devastates wounded beasts.',
-    materialsRequired: { raptor_claw: 3, beast_bone: 4, tough_tendon: 2 },
+  raptor_harpoon: {
+    id: 'raptor_harpoon',
+    name: 'Raptor-Claw Barbed Harpoon',
+    tier: 2,
+    baseDamage: 38,
+    heavyMultiplier: 1.85,
+    staminaCostLight: 13,
+    staminaCostHeavy: 28,
+    critChance: 0.22,
+    reach: 3.4,
+    description: 'Serrated raptor talons lash deep into beast hides, boosting critical strikes.',
+    color: '#6d4c41',
+    accentColor: '#ef4444',
   },
-  obsidian_glaive: {
-    id: 'obsidian_glaive',
-    name: 'Obsidian Razor Glaive',
-    damage: 58,
-    staminaCost: 30,
-    range: 3.8,
-    critBonus: 0.35,
-    description: 'Black volcanic glass flaked into lethal curved blades. Causes hemorrhaging lacerations.',
-    materialsRequired: { obsidian_shard: 5, bronto_shell: 2, beast_bone: 6 },
+  thunder_lance: {
+    id: 'thunder_lance',
+    name: 'Thunderhorn Siege Lance',
+    tier: 3,
+    baseDamage: 56,
+    heavyMultiplier: 2.0,
+    staminaCostLight: 15,
+    staminaCostHeavy: 30,
+    critChance: 0.25,
+    reach: 3.8,
+    description: 'Forged from conductive crest-horn and obsidian cores. Shatters heavy armor plates.',
+    color: '#374151',
+    accentColor: '#38bdf8',
   },
-  caldera_lance: {
-    id: 'caldera_lance',
-    name: 'Titan Magma Lance',
-    damage: 85,
-    staminaCost: 36,
-    range: 4.2,
-    critBonus: 0.45,
-    description: 'Forged from cooled primordial caldera ore and drake horn. Channels explosive piercing force.',
-    materialsRequired: { titan_horn: 2, magma_core: 3, obsidian_shard: 8 },
+  caldera_fang_glaive: {
+    id: 'caldera_fang_glaive',
+    name: 'Caldera Apex Glaive',
+    tier: 4,
+    baseDamage: 82,
+    heavyMultiplier: 2.15,
+    staminaCostLight: 14,
+    staminaCostHeavy: 28,
+    critChance: 0.35,
+    reach: 4.1,
+    description: 'The ultimate relic weapon infused with glowing volcanic magma-core and apex bone.',
+    color: '#1f2937',
+    accentColor: '#f97316',
   },
 };
 
 export const ARMOR_REGISTRY: Record<ArmorId, ArmorDef> = {
   scavenger_rags: {
     id: 'scavenger_rags',
-    name: 'Scavenger Pelts',
+    name: 'Castaway Leather Wraps',
+    tier: 1,
     defense: 6,
-    staminaBonus: 0,
-    description: 'Torn fur and hide wraps. Bare survival against the elements.',
-    materialsRequired: {},
+    maxHpBonus: 0,
+    maxStaminaBonus: 0,
+    dodgeStaminaReduction: 0,
+    description: 'Light cured hides allowing swift movement through dense fern jungles.',
+    color: '#785a46',
+    trimColor: '#a8a29e',
   },
-  beast_hide: {
-    id: 'beast_hide',
-    name: 'Stalker Leather Jerkin',
+  raptor_stalker_garb: {
+    id: 'raptor_stalker_garb',
+    name: 'Raptor-Scale Stalker Garb',
+    tier: 2,
     defense: 16,
-    staminaBonus: 15,
-    description: 'Tanned raptor hide stitched with tendon thread. Flexible and quick in tall grass.',
-    materialsRequired: { beast_hide: 5, raptor_claw: 2 },
+    maxHpBonus: 30,
+    maxStaminaBonus: 25,
+    dodgeStaminaReduction: 3,
+    description: 'Supple feathered scales that reduce dodge roll fatigue and sharpen agility.',
+    color: '#991b1b',
+    trimColor: '#f59e0b',
   },
-  chitin_cuirass: {
-    id: 'chitin_cuirass',
-    name: 'Brontoshell Chitin Plate',
-    defense: 32,
-    staminaBonus: 25,
-    description: 'Carved volcanic carapace overlapping across the chest. Absorbs crushing charges.',
-    materialsRequired: { bronto_shell: 4, beast_bone: 6, volcanic_resin: 3 },
+  bronto_plate_mail: {
+    id: 'bronto_plate_mail',
+    name: 'Brontoshell Carapace Plate',
+    tier: 3,
+    defense: 30,
+    maxHpBonus: 70,
+    maxStaminaBonus: 35,
+    dodgeStaminaReduction: 4,
+    description: 'Interlocking coastal shell plates capable of deflecting crushing tail slams.',
+    color: '#1e3a8a',
+    trimColor: '#38bdf8',
   },
-  caldera_plate: {
-    id: 'caldera_plate',
-    name: 'Volcanic Titan Harness',
-    defense: 50,
-    staminaBonus: 40,
-    description: 'Heat-tempered beast bone and obsidian scales. Shrugs off lethal titan blows.',
-    materialsRequired: { titan_scale: 6, magma_core: 2, obsidian_shard: 6 },
+  thunder_warden_aegis: {
+    id: 'thunder_warden_aegis',
+    name: 'Thunder-Warden Obsidian Aegis',
+    tier: 4,
+    defense: 48,
+    maxHpBonus: 120,
+    maxStaminaBonus: 60,
+    dodgeStaminaReduction: 6,
+    description: 'Masterwork prehistoric armor tempered in geothermal vents and volcanic glass.',
+    color: '#18181b',
+    trimColor: '#fb923c',
   },
 };
 
 export const CRAFTING_RECIPES: CraftingRecipe[] = [
   {
-    id: 'craft_bone_harpoon',
-    name: 'Raptor Bone Harpoon',
+    id: 'craft_raptor_harpoon',
+    name: 'Raptor-Claw Barbed Harpoon',
     category: 'weapon',
-    description: 'Heavy hunting harpoon crafted with razor raptor talons.',
-    cost: { raptor_claw: 3, beast_bone: 4, tough_tendon: 2 },
+    targetId: 'raptor_harpoon',
+    description: 'Upgrade your spear with serrated raptor talons (+14 Damage, +22% Crit).',
+    tier: 2,
+    ingredients: [
+      { materialId: 'raptor_claw', count: 2 },
+      { materialId: 'beast_bone', count: 2 },
+    ],
   },
   {
-    id: 'craft_obsidian_glaive',
-    name: 'Obsidian Razor Glaive',
+    id: 'craft_raptor_garb',
+    name: 'Raptor-Scale Stalker Garb',
+    category: 'armor',
+    targetId: 'raptor_stalker_garb',
+    description: 'Craft agile hunter armor (+16 Def, +30 Max HP, +25 Stamina).',
+    tier: 2,
+    ingredients: [
+      { materialId: 'raptor_hide', count: 2 },
+      { materialId: 'beast_bone', count: 2 },
+    ],
+  },
+  {
+    id: 'craft_bronto_mail',
+    name: 'Brontoshell Carapace Plate',
+    category: 'armor',
+    targetId: 'bronto_plate_mail',
+    description: 'Heavy shell armor from the coastal behemoth (+30 Def, +70 Max HP).',
+    tier: 3,
+    ingredients: [
+      { materialId: 'bronto_shell', count: 2 },
+      { materialId: 'coral_stone', count: 2 },
+    ],
+  },
+  {
+    id: 'craft_thunder_lance',
+    name: 'Thunderhorn Siege Lance',
     category: 'weapon',
-    description: 'Lethal volcanic glass polearm with extended sweeping arcs.',
-    cost: { obsidian_shard: 5, bronto_shell: 2, beast_bone: 6 },
+    targetId: 'thunder_lance',
+    description: 'High-impact siege lance (+56 Damage, 2.0x Heavy Thrust).',
+    tier: 3,
+    ingredients: [
+      { materialId: 'thunder_horn', count: 1 },
+      { materialId: 'obsidian_shard', count: 2 },
+      { materialId: 'bronto_shell', count: 1 },
+    ],
   },
   {
-    id: 'craft_caldera_lance',
-    name: 'Titan Magma Lance',
+    id: 'craft_thunder_aegis',
+    name: 'Thunder-Warden Obsidian Aegis',
+    category: 'armor',
+    targetId: 'thunder_warden_aegis',
+    description: 'Volcanic plate armor built to withstand the Caldera Titan (+48 Def, +120 HP).',
+    tier: 4,
+    ingredients: [
+      { materialId: 'thunder_horn', count: 1 },
+      { materialId: 'obsidian_shard', count: 3 },
+      { materialId: 'magma_core', count: 1 },
+    ],
+  },
+  {
+    id: 'craft_caldera_glaive',
+    name: 'Caldera Apex Glaive',
     category: 'weapon',
-    description: 'Apex prehistoric weapon imbued with igneous stone and titan horn.',
-    cost: { titan_horn: 2, magma_core: 3, obsidian_shard: 8 },
+    targetId: 'caldera_fang_glaive',
+    description: 'Apex weapon forged from the Caldera Titan (+82 Damage, 35% Crit).',
+    tier: 4,
+    ingredients: [
+      { materialId: 'titan_fang', count: 1 },
+      { materialId: 'magma_core', count: 2 },
+    ],
   },
   {
-    id: 'craft_beast_hide',
-    name: 'Stalker Leather Jerkin',
-    category: 'armor',
-    description: 'Supple armor increasing defense and stamina pool.',
-    cost: { beast_hide: 5, raptor_claw: 2 },
+    id: 'craft_vitality_salve',
+    name: 'Refill Vitality Salves (+2)',
+    category: 'tool',
+    targetId: 'vitality_salve',
+    description: 'Distill glowing sun-herbs and geothermal resin into restorative salves.',
+    tier: 1,
+    ingredients: [{ materialId: 'sun_herb', count: 2 }],
   },
   {
-    id: 'craft_chitin_cuirass',
-    name: 'Brontoshell Chitin Plate',
-    category: 'armor',
-    description: 'Heavy carapace armor that reduces heavy beast charge impact.',
-    cost: { bronto_shell: 4, beast_bone: 6, volcanic_resin: 3 },
+    id: 'craft_snare_trap',
+    name: 'Craft Sinew Snare Trap (+2)',
+    category: 'tool',
+    targetId: 'snare_trap',
+    description: 'Binds charging beasts in place for 5 seconds, exposing weak points.',
+    tier: 1,
+    ingredients: [
+      { materialId: 'beast_bone', count: 1 },
+      { materialId: 'volcanic_resin', count: 1 },
+    ],
   },
   {
-    id: 'craft_caldera_plate',
-    name: 'Volcanic Titan Harness',
-    category: 'armor',
-    description: 'Supreme armor forged from volcanic scales and magma core.',
-    cost: { titan_scale: 6, magma_core: 2, obsidian_shard: 6 },
-  },
-  {
-    id: 'craft_trap_satchel',
-    name: 'Shock-Vine Pitfall Trap (x2)',
-    category: 'supplies',
-    description: 'Deploys a spring-loaded bone snare that grounds and staggers charging beasts.',
-    cost: { beast_bone: 2, tough_tendon: 2 },
-  },
-  {
-    id: 'craft_healing_brew',
-    name: 'Vitality Magma Salve (x2)',
-    category: 'supplies',
-    description: 'Steeped prehistoric ferns and mineral resin restores 65 HP.',
-    cost: { sun_herb: 2, volcanic_resin: 1 },
-  },
-  {
-    id: 'repair_signal_beacon_1',
-    name: 'Signal Tower: Mirror Reflector',
-    category: 'beacon',
-    description: 'Ground and align polished obsidian mirrors on the caldera peak.',
-    cost: { obsidian_shard: 4, bronto_shell: 2 },
-  },
-  {
-    id: 'repair_signal_beacon_2',
-    name: 'Signal Tower: Magma Igniter Brazier',
-    category: 'beacon',
-    description: 'Install heat-resistant titan bone mounts and prime the ignite chamber.',
-    cost: { titan_horn: 1, magma_core: 2 },
+    id: 'craft_signal_beacon',
+    name: 'Ignite the Ancient Signal Tower',
+    category: 'tower',
+    targetId: 'ancient_flare',
+    description: 'Combine an Apex Magma Heart with Obsidian and Resin to light the island rescue beacon.',
+    tier: 4,
+    ingredients: [
+      { materialId: 'titan_fang', count: 1 },
+      { materialId: 'obsidian_shard', count: 2 },
+      { materialId: 'volcanic_resin', count: 2 },
+    ],
   },
 ];
 
 export const QUEST_CHAIN: QuestStep[] = [
   {
-    id: 'quest_1_stalk_raptors',
-    title: 'The Ravine Stalker',
-    description: 'Track the swift Raptor Stalkers through the Jungle Ravine. Study their pack movements, dodge their pounce, and carve bone for your first harpoon.',
-    targetRegion: 'jungle',
-    targetBeastSpecies: 'raptor',
+    id: 'q1_hunt_raptor',
+    title: 'The Ravine & River Stalker',
+    description: 'Explore the Jungle Ravine and Crystal River. Track the Razor-Crest Raptor or River Snapjaw Leviathan, speak with Chief Kael at camp, and carve bone for your harpoon.',
+    targetBiome: 'jungle',
+    targetX: -28,
+    targetZ: 45,
     completed: false,
   },
   {
-    id: 'quest_2_brontoshell',
-    title: 'Carapace of the Black Sand',
-    description: 'Venture to the volcanic Black-Sand Coast. Hunt the giant armored Brontoshell. Exploit its underbelly weak point after dodging its heavy body slam.',
-    targetRegion: 'coast',
-    targetBeastSpecies: 'brontoshell',
+    id: 'q2_craft_harpoon',
+    title: 'Fangs & Carapace',
+    description: 'Return to the Campfire Workbench [E] or press [Tab] to forge a Tier 2 weapon or armor, or venture into the Cold Snow Mountains to hunt the Frostfang Mammoth.',
+    targetBiome: 'jungle',
+    targetX: 0,
+    targetZ: 28,
     completed: false,
   },
   {
-    id: 'quest_3_thunderhorn',
-    title: 'Echoes in the Steaming Springs',
-    description: 'Ascend to the Steaming Springs geyser basin. Stalk the colossal Thunder-Horn Behemoth. Lure its freight-train charge into rocks or traps to break its horns.',
-    targetRegion: 'springs',
-    targetBeastSpecies: 'thunderhorn',
+    id: 'q3_hunt_coastal_behemoth',
+    title: 'Shell of the Black Coast',
+    description: 'Venture east to the Black Sand Coast & Ocean Shallows and break the armored shell of the Brontoshell.',
+    targetBiome: 'coast',
+    targetX: 46,
+    targetZ: 36,
     completed: false,
   },
   {
-    id: 'quest_4_signal_beacon',
-    title: 'The Ancient Summit Ascent',
-    description: 'Reach the high volcanic Caldera. Gather obsidian and titan materials to repair the ancient Island Signal Tower at the island pinnacle.',
-    targetRegion: 'caldera',
+    id: 'q4_hunt_thunderhorn',
+    title: 'Thunder in the Geothermal Mist',
+    description: 'Cross the sulfur springs to defeat the charging Thunderhorn Charger and harvest its horn.',
+    targetBiome: 'springs',
+    targetX: -48,
+    targetZ: -18,
     completed: false,
-    requiredMaterial: { id: 'obsidian_shard', count: 4 },
   },
   {
-    id: 'quest_5_caldera_titan',
-    title: 'Apex Sovereign: The Caldera Titan',
-    description: 'The ancient mountain trembles. Face the colossal Caldera Titan atop the volcano crater, survive its fiery wrath, and ignite the beacon fire to save your people!',
-    targetRegion: 'caldera',
-    targetBeastSpecies: 'caldera_titan',
+    id: 'q5_slay_caldera_titan',
+    title: 'Sovereign of the Caldera',
+    description: 'Ascend the northern volcanic ridge and slay Ignis-Rex, the Caldera Titan.',
+    targetBiome: 'caldera',
+    targetX: 0,
+    targetZ: -64,
+    completed: false,
+  },
+  {
+    id: 'q6_ignite_signal_tower',
+    title: 'Beacon of the Ancients',
+    description: 'Carry the Titan Fang to the Ancient Signal Tower on the central plateau and ignite the beacon [E].',
+    targetBiome: 'jungle',
+    targetX: 0,
+    targetZ: 5,
     completed: false,
   },
 ];
 
 export const DEFAULT_PLAYER_STATS: PlayerStats = {
-  hp: 120,
-  maxHp: 120,
-  stamina: 100,
-  maxStamina: 100,
-  staminaRegen: 32, // per second
+  hp: 140,
+  maxHp: 140,
+  stamina: 110,
+  maxStamina: 110,
+  staminaRegenRate: 24,
+  attackPower: 24,
+  defense: 6,
+  critChance: 0.1,
   healingFlasks: 3,
   maxHealingFlasks: 4,
-  flaskHealAmount: 65,
   traps: 2,
-  maxTraps: 4,
-  stones: 5,
-  attackPower: 10,
-  defense: 6,
-  critChance: 0.12,
+  maxTraps: 3,
+  lureStones: 5,
+  maxLureStones: 5,
 };
 
 export const DEFAULT_SETTINGS: GameSettings = {
+  cameraSensitivity: 1.0,
   mouseSensitivity: 1.0,
-  touchSensitivity: 1.2,
+  touchSensitivity: 1.0,
   invertY: false,
-  masterVolume: 0.8,
+  audioVolume: 0.7,
+  masterVolume: 0.85,
   sfxVolume: 0.9,
-  musicVolume: 0.7,
+  musicVolume: 0.5,
+  sfxMuted: false,
   difficulty: 'hunter',
-  vibration: true,
+  showDamageNumbers: true,
 };
 
+export interface CameraRelativeMovement {
+  dx: number;
+  dz: number;
+  targetRotation: number;
+  isMoving: boolean;
+}
+
 /**
- * Combat damage formula with weak point multiplier, weapon scale, and difficulty modifiers.
+ * Pure function that computes world-space movement (dx, dz) and character facing rotation
+ * from camera yaw and directional inputs:
+ * - moveForward > 0: moving FRONT (into the scene, away from camera)
+ * - moveForward < 0: moving BACK (toward the camera)
+ * - moveRight > 0: moving RIGHT on screen
+ * - moveRight < 0: moving LEFT on screen
+ *
+ * Camera sits at:
+ *   camX = playerPos.x - sin(cameraYaw) * cos(cameraPitch) * dist
+ *   camZ = playerPos.z - cos(cameraYaw) * cos(cameraPitch) * dist
+ * Therefore:
+ *   Camera Forward unit vector on XZ plane = (+sin(cameraYaw), +cos(cameraYaw))
+ *   Camera Right unit vector on XZ plane   = (-cos(cameraYaw), +sin(cameraYaw))
  */
-export function calculateDamage(
-  attackerBasePower: number,
-  weaponBonus: number,
-  isHeavyAttack: boolean,
-  isWeakPointHit: boolean,
-  weakPointMultiplier: number = 1.0,
-  targetDefense: number = 0,
-  critChance: number = 0.1,
-  difficulty: 'story' | 'hunter' | 'savage' = 'hunter',
-  randomFloat = Math.random
-): { damage: number; isCrit: boolean; isWeakPoint: boolean } {
-  const baseDmg = (attackerBasePower + weaponBonus) * (isHeavyAttack ? 1.85 : 1.0);
-  const isCrit = randomFloat() < critChance;
-  const critMultiplier = isCrit ? 1.6 : 1.0;
-  const weakMult = isWeakPointHit ? Math.max(1.0, weakPointMultiplier) : 1.0;
-
-  let netDmg = (baseDmg * critMultiplier * weakMult) - (targetDefense * 0.45);
-  netDmg = Math.max(6, netDmg);
-
-  if (difficulty === 'story') {
-    netDmg *= 1.25;
-  } else if (difficulty === 'savage') {
-    netDmg *= 0.85;
+export function computeCameraRelativeMovement(
+  moveForward: number,
+  moveRight: number,
+  cameraYaw: number,
+  speed: number,
+  dt: number
+): CameraRelativeMovement {
+  const mag = Math.hypot(moveForward, moveRight);
+  if (mag < 0.001 || speed <= 0 || dt <= 0) {
+    return { dx: 0, dz: 0, targetRotation: cameraYaw, isMoving: false };
   }
 
+  const normF = moveForward / Math.max(1, mag);
+  const normR = moveRight / Math.max(1, mag);
+
+  const forwardX = Math.sin(cameraYaw);
+  const forwardZ = Math.cos(cameraYaw);
+  const rightX = -Math.cos(cameraYaw);
+  const rightZ = Math.sin(cameraYaw);
+
+  const dirX = normF * forwardX + normR * rightX;
+  const dirZ = normF * forwardZ + normR * rightZ;
+
+  const dirLen = Math.hypot(dirX, dirZ) || 1;
+  const unitX = dirX / dirLen;
+  const unitZ = dirZ / dirLen;
+
+  // Model's local +Z faces forward, so rotation around Y is atan2(unitX, unitZ)
+  const targetRotation = Math.atan2(unitX, unitZ);
+
   return {
-    damage: Math.round(netDmg),
-    isCrit,
-    isWeakPoint: isWeakPointHit,
+    dx: unitX * speed * Math.min(1, mag) * dt,
+    dz: unitZ * speed * Math.min(1, mag) * dt,
+    targetRotation,
+    isMoving: true,
   };
 }
 
 /**
- * Calculates beast damage dealt to the player based on beast attack power, player armor, and difficulty.
+ * Shortest-arc angular interpolation so the hunter turns smoothly without spinning 360 deg.
+ */
+export function stepAngleShortestArc(currentAngle: number, targetAngle: number, t: number): number {
+  let diff = targetAngle - currentAngle;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  return currentAngle + diff * Math.max(0, Math.min(1, t));
+}
+
+export interface DamageCalculationInput {
+  weaponDamage: number;
+  isHeavyAttack: boolean;
+  heavyMultiplier: number;
+  weakPointMultiplier: number;
+  isEnraged: boolean;
+  isStaggered: boolean;
+  critRoll: number; // 0 to 1
+  critChance: number;
+  difficulty: 'story' | 'hunter' | 'apex';
+}
+
+export interface DamageCalculationResult {
+  finalDamage: number;
+  isCrit: boolean;
+  isWeakPointHit: boolean;
+}
+
+/**
+ * Pure function calculating hunter attack damage against a beast.
+ */
+export function calculateDamage(input: DamageCalculationInput): DamageCalculationResult {
+  if (input.weaponDamage <= 0) {
+    return { finalDamage: 0, isCrit: false, isWeakPointHit: false };
+  }
+
+  let dmg = input.weaponDamage;
+  if (input.isHeavyAttack) {
+    dmg *= Math.max(1, input.heavyMultiplier);
+  }
+
+  const isWeakPointHit = input.weakPointMultiplier > 1.05;
+  dmg *= Math.max(0.5, input.weakPointMultiplier);
+
+  if (input.isStaggered) {
+    dmg *= 1.35;
+  } else if (input.isEnraged) {
+    dmg *= 1.1;
+  }
+
+  const isCrit = input.critRoll < Math.max(0, Math.min(1, input.critChance));
+  if (isCrit) {
+    dmg *= 1.5;
+  }
+
+  if (input.difficulty === 'story') {
+    dmg *= 1.25;
+  } else if (input.difficulty === 'apex') {
+    dmg *= 0.9;
+  }
+
+  return {
+    finalDamage: Math.max(1, Math.round(dmg)),
+    isCrit,
+    isWeakPointHit,
+  };
+}
+
+/**
+ * Pure function calculating damage taken by the hunter after armor defense.
  */
 export function calculatePlayerDamageTaken(
-  beastAttackPower: number,
-  playerArmorDefense: number,
-  difficulty: 'story' | 'hunter' | 'savage' = 'hunter'
+  rawBeastDamage: number,
+  playerDefense: number,
+  difficulty: 'story' | 'hunter' | 'apex'
 ): number {
-  let net = beastAttackPower - (playerArmorDefense * 0.55);
-  net = Math.max(5, net);
-
-  if (difficulty === 'story') {
-    net *= 0.65;
-  } else if (difficulty === 'savage') {
-    net *= 1.4;
-  }
-
-  return Math.round(net);
+  if (rawBeastDamage <= 0) return 0;
+  const diffScale = difficulty === 'story' ? 0.65 : difficulty === 'apex' ? 1.3 : 1.0;
+  const scaledRaw = rawBeastDamage * diffScale;
+  const mitigation = 100 / (100 + Math.max(0, playerDefense) * 1.8);
+  return Math.max(1, Math.round(scaledRaw * mitigation));
 }
 
 /**
- * Stamina consumption rule
+ * Pure function computing stamina cost for actions.
  */
 export function calculateStaminaCost(
-  action: 'light' | 'heavy' | 'dodge' | 'throw',
-  weaponId: WeaponId = 'flint_spear',
-  difficulty: 'story' | 'hunter' | 'savage' = 'hunter'
+  action: 'light' | 'heavy' | 'dodge' | 'sprint',
+  weapon: WeaponDef,
+  armor: ArmorDef,
+  dt = 1
 ): number {
-  const weapon = WEAPON_REGISTRY[weaponId] || WEAPON_REGISTRY.flint_spear;
-  let cost = 15;
   switch (action) {
     case 'light':
-      cost = weapon.staminaCost;
-      break;
+      return Math.max(4, weapon.staminaCostLight);
     case 'heavy':
-      cost = weapon.staminaCost * 1.7;
-      break;
+      return Math.max(8, weapon.staminaCostHeavy);
     case 'dodge':
-      cost = 22;
-      break;
-    case 'throw':
-      cost = 12;
-      break;
+      return Math.max(8, 22 - armor.dodgeStaminaReduction);
+    case 'sprint':
+      return Math.max(2, 14 * dt);
+    default:
+      return 0;
   }
-  if (difficulty === 'story') cost *= 0.8;
-  if (difficulty === 'savage') cost *= 1.2;
-  return Math.round(cost);
 }
 
 /**
- * Check if a dodge roll is currently granting invulnerability frames (i-frames).
- * Standard roll lasts ~0.65s, i-frames occur between 0.08s and 0.42s (over 50% generous window).
+ * Pure function determining if a dodge roll grants invulnerability frames (i-frames) at elapsed time.
  */
-export function isDodgeInvulnerable(rollProgress: number): boolean {
-  return rollProgress >= 0.1 && rollProgress <= 0.65;
+export function isDodgeInvulnerable(dodgeElapsed: number, totalDodgeDuration = 0.48): boolean {
+  if (dodgeElapsed < 0 || dodgeElapsed > totalDodgeDuration) return false;
+  return dodgeElapsed >= 0.04 && dodgeElapsed <= 0.36;
 }
 
 /**
- * Verify whether player has required materials for a recipe
+ * Pure function checking if inventory has enough materials to craft a recipe.
  */
 export function canCraftRecipe(
-  recipeCost: Record<string, number>,
-  materials: Record<string, number>
+  recipe: CraftingRecipe,
+  materials: Record<string, number>,
+  ownedWeapons: WeaponId[],
+  ownedArmors: ArmorId[]
 ): boolean {
-  for (const [mat, count] of Object.entries(recipeCost)) {
-    if ((materials[mat] || 0) < count) {
-      return false;
-    }
+  if (recipe.category === 'weapon' && ownedWeapons.includes(recipe.targetId as WeaponId)) {
+    return false;
+  }
+  if (recipe.category === 'armor' && ownedArmors.includes(recipe.targetId as ArmorId)) {
+    return false;
+  }
+  for (const req of recipe.ingredients) {
+    const have = materials[req.materialId] || 0;
+    if (have < req.count) return false;
   }
   return true;
 }
 
 /**
- * Deduct materials upon crafting
+ * Pure function returning updated materials map after deducting recipe ingredients.
  */
 export function deductCraftingMaterials(
-  recipeCost: Record<string, number>,
+  recipe: CraftingRecipe,
   materials: Record<string, number>
 ): Record<string, number> {
-  const updated = { ...materials };
-  for (const [mat, count] of Object.entries(recipeCost)) {
-    updated[mat] = Math.max(0, (updated[mat] || 0) - count);
+  const next = { ...materials };
+  for (const req of recipe.ingredients) {
+    const current = next[req.materialId] || 0;
+    next[req.materialId] = Math.max(0, current - req.count);
   }
-  return updated;
+  return next;
 }
 
 /**
- * Progress beast weak point status
+ * Pure function applying damage to a beast weak point and returning updated weak point + stagger trigger.
  */
 export function applyWeakPointDamage(
   weakPoint: BeastWeakPoint,
   damage: number
-): { brokenNow: boolean; weakPoint: BeastWeakPoint } {
-  if (weakPoint.broken) {
-    return { brokenNow: false, weakPoint };
+): { updated: BeastWeakPoint; justBroke: boolean } {
+  if (weakPoint.broken || damage <= 0) {
+    return { updated: { ...weakPoint }, justBroke: false };
   }
-  const acc = weakPoint.accumulatedDamage + damage;
-  const brokenNow = acc >= weakPoint.breakThreshold;
+  const nextHp = Math.max(0, weakPoint.partHp - damage);
+  const justBroke = nextHp === 0 && !weakPoint.broken;
   return {
-    brokenNow,
-    weakPoint: {
+    updated: {
       ...weakPoint,
-      accumulatedDamage: acc,
-      broken: brokenNow,
+      partHp: nextHp,
+      broken: nextHp === 0,
     },
+    justBroke,
   };
 }
 
 /**
- * Beast weak points template per species
+ * Factory for beast weak points per species.
  */
 export function createBeastWeakPoints(species: BeastSpecies): BeastWeakPoint[] {
   switch (species) {
     case 'raptor':
       return [
         {
-          id: 'head',
-          name: 'Throat & Crest',
-          offset: [0, 1.6, 1.8],
-          radius: 0.9,
-          damageMultiplier: 2.2,
+          id: 'raptor_head_crest',
+          name: 'Feathered Skull Crest',
+          localOffset: { x: 0, y: 1.7, z: 1.6 },
+          radius: 1.15,
+          damageMultiplier: 1.55,
+          partHp: 90,
+          maxPartHp: 90,
           broken: false,
-          breakThreshold: 60,
-          accumulatedDamage: 0,
+          bonusDropMaterialId: 'raptor_claw',
         },
         {
-          id: 'tendon',
-          name: 'Hind Leg Tendon',
-          offset: [0.6, 0.7, -0.6],
-          radius: 0.8,
+          id: 'raptor_tail_plume',
+          name: 'Counterbalance Tail',
+          localOffset: { x: 0, y: 1.2, z: -1.9 },
+          radius: 1.1,
+          damageMultiplier: 1.35,
+          partHp: 80,
+          maxPartHp: 80,
+          broken: false,
+          bonusDropMaterialId: 'raptor_hide',
+        },
+      ];
+    case 'brontoshell':
+      return [
+        {
+          id: 'bronto_cranial_crown',
+          name: 'Beaked Head',
+          localOffset: { x: 0, y: 1.6, z: 2.3 },
+          radius: 1.25,
           damageMultiplier: 1.6,
+          partHp: 140,
+          maxPartHp: 140,
           broken: false,
-          breakThreshold: 45,
-          accumulatedDamage: 0,
+          bonusDropMaterialId: 'bronto_shell',
+        },
+        {
+          id: 'bronto_tail_club',
+          name: 'Spiked Tail Club',
+          localOffset: { x: 0, y: 1.1, z: -2.5 },
+          radius: 1.3,
+          damageMultiplier: 1.45,
+          partHp: 130,
+          maxPartHp: 130,
+          broken: false,
+          bonusDropMaterialId: 'coral_stone',
         },
       ];
-    case 'brontoshell':
+    case 'thunderhorn':
       return [
         {
-          id: 'underbelly',
-          name: 'Soft Underbelly',
-          offset: [0, 0.7, 0.2],
+          id: 'thunder_crest_horn',
+          name: 'Conductive Nasal Horn',
+          localOffset: { x: 0, y: 2.1, z: 2.4 },
+          radius: 1.35,
+          damageMultiplier: 1.65,
+          partHp: 170,
+          maxPartHp: 170,
+          broken: false,
+          bonusDropMaterialId: 'thunder_horn',
+        },
+        {
+          id: 'thunder_hind_flank',
+          name: 'Exposed Thermal Vent Flank',
+          localOffset: { x: 0, y: 1.6, z: -1.8 },
           radius: 1.4,
-          damageMultiplier: 2.5,
+          damageMultiplier: 1.4,
+          partHp: 150,
+          maxPartHp: 150,
           broken: false,
-          breakThreshold: 120,
-          accumulatedDamage: 0,
-        },
-        {
-          id: 'eye_socket',
-          name: 'Unarmored Head',
-          offset: [0, 1.8, 2.5],
-          radius: 1.0,
-          damageMultiplier: 2.0,
-          broken: false,
-          breakThreshold: 90,
-          accumulatedDamage: 0,
+          bonusDropMaterialId: 'obsidian_shard',
         },
       ];
-    case 'thunderhorn':
+    case 'frostfang':
       return [
         {
-          id: 'horn_ridge',
-          name: 'Thunder Crest Horns',
-          offset: [0, 2.8, 2.8],
+          id: 'frostfang_glacial_tusks',
+          name: 'Curved Glacial Ivory Tusks',
+          localOffset: { x: 0, y: 2.2, z: 2.7 },
+          radius: 1.45,
+          damageMultiplier: 1.65,
+          partHp: 190,
+          maxPartHp: 190,
+          broken: false,
+          bonusDropMaterialId: 'thunder_horn',
+        },
+        {
+          id: 'frostfang_ice_hump',
+          name: 'Crystalline Ice-Ridge Hump',
+          localOffset: { x: 0, y: 3.1, z: -0.4 },
+          radius: 1.4,
+          damageMultiplier: 1.45,
+          partHp: 160,
+          maxPartHp: 160,
+          broken: false,
+          bonusDropMaterialId: 'beast_bone',
+        },
+      ];
+    case 'snapjaw':
+      return [
+        {
+          id: 'snapjaw_gullet',
+          name: 'Bioluminescent River Maw',
+          localOffset: { x: 0, y: 1.1, z: 2.5 },
+          radius: 1.3,
+          damageMultiplier: 1.6,
+          partHp: 130,
+          maxPartHp: 130,
+          broken: false,
+          bonusDropMaterialId: 'raptor_claw',
+        },
+        {
+          id: 'snapjaw_dorsal_fin',
+          name: 'Serrated Hydro-Sail Crest',
+          localOffset: { x: 0, y: 1.9, z: -0.5 },
+          radius: 1.35,
+          damageMultiplier: 1.45,
+          partHp: 120,
+          maxPartHp: 120,
+          broken: false,
+          bonusDropMaterialId: 'coral_stone',
+        },
+      ];
+    case 'caldera_titan':
+      return [
+        {
+          id: 'titan_magma_jaw',
+          name: 'Molten Maw & Crown',
+          localOffset: { x: 0, y: 2.8, z: 2.8 },
           radius: 1.5,
-          damageMultiplier: 1.8,
+          damageMultiplier: 1.75,
+          partHp: 220,
+          maxPartHp: 220,
           broken: false,
-          breakThreshold: 150,
-          accumulatedDamage: 0,
+          bonusDropMaterialId: 'titan_fang',
         },
         {
-          id: 'flank',
-          name: 'Rib Gland',
-          offset: [1.6, 1.6, -0.2],
-          radius: 1.2,
-          damageMultiplier: 2.0,
+          id: 'titan_core_chest',
+          name: 'Volcanic Heart Core',
+          localOffset: { x: 0, y: 2.1, z: 0.6 },
+          radius: 1.4,
+          damageMultiplier: 1.6,
+          partHp: 200,
+          maxPartHp: 200,
           broken: false,
-          breakThreshold: 110,
-          accumulatedDamage: 0,
+          bonusDropMaterialId: 'magma_core',
         },
       ];
-    case 'caldera_titan':
-      return [
-        {
-          id: 'magma_core',
-          name: 'Glowing Magma Heart',
-          offset: [0, 3.2, 1.2],
-          radius: 1.8,
-          damageMultiplier: 2.6,
-          broken: false,
-          breakThreshold: 220,
-          accumulatedDamage: 0,
-        },
-        {
-          id: 'crown_horns',
-          name: 'Ancient Titan Horns',
-          offset: [0, 5.0, 2.4],
-          radius: 1.6,
-          damageMultiplier: 2.0,
-          broken: false,
-          breakThreshold: 180,
-          accumulatedDamage: 0,
-        },
-      ];
-  }
-}
-
-/**
- * Determine drops for each beast
- */
-export function getBeastDrops(species: BeastSpecies): Record<string, number> {
-  switch (species) {
-    case 'raptor':
-      return {
-        raptor_claw: 2 + Math.floor(Math.random() * 2),
-        beast_bone: 3 + Math.floor(Math.random() * 3),
-        tough_tendon: 2,
-        beast_hide: 2 + Math.floor(Math.random() * 2),
-      };
-    case 'brontoshell':
-      return {
-        bronto_shell: 2 + Math.floor(Math.random() * 2),
-        beast_bone: 4 + Math.floor(Math.random() * 3),
-        obsidian_shard: 2 + Math.floor(Math.random() * 3),
-        volcanic_resin: 2,
-      };
-    case 'thunderhorn':
-      return {
-        titan_horn: 1 + Math.floor(Math.random() * 2),
-        beast_bone: 6,
-        beast_hide: 4,
-        volcanic_resin: 3,
-        obsidian_shard: 3,
-      };
-    case 'caldera_titan':
-      return {
-        magma_core: 2 + Math.floor(Math.random() * 2),
-        titan_scale: 4 + Math.floor(Math.random() * 3),
-        titan_horn: 2,
-        obsidian_shard: 6,
-      };
   }
 }

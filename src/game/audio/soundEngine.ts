@@ -478,6 +478,44 @@ class SoundEngine {
     osc.start(t);
     osc.stop(t + 1.7);
   }
+
+  public setMuted(muted: boolean) {
+    if (this.isMuted !== muted) {
+      this.toggleMute();
+    }
+  }
+
+  public playDodgeRoll() {
+    this.playDodge();
+  }
+
+  public playTrapPlace() {
+    this.playCarve();
+  }
+
+  public playFocusPulse() {
+    this.playFocusToggle(true);
+  }
+
+  public playGather() {
+    this.playCarve();
+  }
+
+  public playVictoryFanfare() {
+    this.playVictory();
+  }
+
+  public playHitImpact(isWeakPoint: boolean, isCrit: boolean) {
+    this.playHit(isWeakPoint, isCrit);
+  }
+
+  public playPartBreak() {
+    this.playHit(true, true);
+  }
+
+  public playPlayerHurt() {
+    this.playHurt();
+  }
 }
 
 export const sound = new SoundEngine();
