@@ -16,6 +16,7 @@ interface PauseSettingsModalProps {
   onTitle: () => void;
   onUpdateSettings: (newSettings: GameSettings) => void;
   onImportSave: (save: SaveData) => void;
+  onLoadModel?: (urlOrFile: string | File) => void;
 }
 
 export const PauseSettingsModal: React.FC<PauseSettingsModalProps> = ({
@@ -26,11 +27,14 @@ export const PauseSettingsModal: React.FC<PauseSettingsModalProps> = ({
   onTitle,
   onUpdateSettings,
   onImportSave,
+  onLoadModel,
 }) => {
-  const [tab, setTab] = useState<'pause' | 'settings' | 'save'>('pause');
+  const [tab, setTab] = useState<'pause' | 'settings' | 'save' | 'model'>('pause');
   const [copied, setCopied] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
+  const [modelUrl, setModelUrl] = useState('');
+  const [modelLoadingStatus, setModelLoadingStatus] = useState<string | null>(null);
 
   const handleSensitivityChange = (val: number, isTouch: boolean) => {
     const updated = {

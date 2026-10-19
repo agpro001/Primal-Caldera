@@ -5,6 +5,23 @@
 
 export type GameState = 'title' | 'playing' | 'paused' | 'crafting' | 'gameover' | 'defeat' | 'victory';
 
+export type PlayableCharacterId = 'demon_hunter' | 'swat_operator' | 'bulky_knight';
+
+export type StrikeGestureType = 'tap' | 'swipe_up' | 'swipe_down';
+
+export interface DayNightState {
+  timeOfDayHours: number; // 0.0 to 24.0
+  phase: 'dawn' | 'day' | 'dusk' | 'night';
+  isNight: boolean;
+  sunIntensity: number;
+  ambientIntensity: number;
+  skyColorHex: number;
+  fogColorHex: number;
+  beastAggressionMultiplier: number;
+  beastAggroRadiusMultiplier: number;
+  activeGatheringResource: 'sun_herb' | 'luminous_night_spore';
+}
+
 export type BiomeType = 'jungle' | 'coast' | 'springs' | 'lava' | 'caldera' | 'snow' | 'river' | 'ocean';
 
 export type WeatherType = 'clear' | 'heavy_rain' | 'dense_fog' | 'ash_storm';
@@ -217,7 +234,13 @@ export interface PlayerStats {
   maxWaterCanteens: number;
   eggsCollected: number;
   eggInventory?: Partial<Record<BeastSpecies, number>>;
-  // Flight & Physics State
+  // Flight, Character Swap & Vehicle State
+  activeCharacter?: PlayableCharacterId;
+  isPilotingSpaceFighter?: boolean;
+  isMountedOnBeast?: boolean;
+  isCrouching?: boolean;
+  timeOfDayHours?: number;
+  isNight?: boolean;
   isFlying?: boolean;
   isJumping?: boolean;
   altitude?: number;

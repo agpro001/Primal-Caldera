@@ -12,9 +12,9 @@ import type {
   WeatherType,
   AtmosphericScienceState,
   AdventureMission,
+  PlayableCharacterId,
 } from '../types/game.ts';
 import {
-  QUEST_CHAIN,
   WEAPON_REGISTRY,
   ARMOR_REGISTRY,
 } from '../game/logic/rules.ts';
@@ -35,6 +35,12 @@ interface HUDProps {
   notification: { message: string; type: 'info' | 'loot' | 'danger' } | null;
   focusVisionActive: boolean;
   hitMarker?: { damage: number; isCrit: boolean; isWeakPoint: boolean; id: number } | null;
+  activeCharacterId?: PlayableCharacterId;
+  timeOfDayHours?: number;
+  dayPhase?: 'dawn' | 'day' | 'dusk' | 'night';
+  onSwapCharacter?: (charId: PlayableCharacterId) => void;
+  onToggleDayNight?: () => void;
+  onStrikeGesture?: (gesture: 'tap' | 'swipe_up' | 'swipe_down') => void;
   onAttack: () => void;
   onChargeRelease: () => void;
   onJump: () => void;
@@ -55,22 +61,53 @@ interface HUDProps {
   onLookDelta: (dx: number, dy: number) => void;
 }
 
+const HERO_ROSTER_META: {
+  id: PlayableCharacterId;
+  key: string;
+  shortName: string;
+  role: string;
+  accent: string;
+}[] = [
+  {
+    id: 'demon_hunter',
+    key: '1',
+    shortName: 'Demon Hunter',
+    role: 'Glaive & Vault',
+    accent: 'border-purple-400/70 bg-purple-950/80 text-purple-200',
+  },
+  {
+    id: 'swat_operator',
+    key: '2',
+    shortName: 'S.W.A.T. Op',
+    role: 'Tactical Rifle',
+    accent: 'border-sky-400/70 bg-sky-950/80 text-sky-200',
+  },
+  {
+    id: 'bulky_knight',
+    key: '3',
+    shortName: 'Bulky Knight',
+    role: 'Aegis & Slam',
+    accent: 'border-amber-400/70 bg-amber-950/80 text-amber-200',
+  },
+];
+
 export const HUD: React.FC<HUDProps> = ({
   stats,
   targetBeast,
-  currentQuestIndex,
   equippedWeapon,
   equippedArmor,
-  currentWeather,
-  atmosphericScience,
-  adventureMissions,
-  activeAdventureId,
   isFlying,
   isAirborne,
   interactPrompt,
   notification,
   focusVisionActive,
   hitMarker,
+  activeCharacterId = 'demon_hunter',
+  timeOfDayHours = 10.5,
+  dayPhase = 'day',
+  onSwapCharacter,
+  onToggleDayNight,
+  onStrikeGesture,
   onAttack,
   onChargeRelease,
   onJump,
@@ -79,9 +116,7 @@ export const HUD: React.FC<HUDProps> = ({
   onEatFood,
   onDrinkWater,
   onConsumeEgg,
-  onSelectAdventure,
   onPlaceTrap,
-  onThrowStone,
   onToggleFocus,
   onInteract,
   onOpenCrafting,
@@ -90,16 +125,17 @@ export const HUD: React.FC<HUDProps> = ({
   onVirtualMove,
   onLookDelta,
 }) => {
-  const currentQuest = QUEST_CHAIN[Math.min(currentQuestIndex, QUEST_CHAIN.length - 1)];
   const weapon = WEAPON_REGISTRY[equippedWeapon];
   const armor = ARMOR_REGISTRY[equippedArmor];
-
-  const activeAdventure =
-    adventureMissions.find((m) => m.id === activeAdventureId) || adventureMissions[0];
 
   const hpPct = Math.max(0, Math.min(100, (stats.hp / stats.maxHp) * 100));
   const foodPct = Math.max(0, Math.min(100, (stats.food / stats.maxFood) * 100));
   const waterPct = Math.max(0, Math.min(100, (stats.water / stats.maxWater) * 100));
+
+  const isNight = dayPhase === 'night' || dayPhase === 'dusk';
+  const hoursInt = Math.floor(timeOfDayHours) % 24;
+  const minsInt = Math.floor((timeOfDayHours - Math.floor(timeOfDayHours)) * 60);
+  const formattedClock = `${String(hoursInt).padStart(2, '0')}:${String(minsInt).padStart(2, '0')}`;
 
   // Virtual Joystick State
   const joyRef = useRef<HTMLDivElement>(null);
@@ -109,6 +145,9 @@ export const HUD: React.FC<HUDProps> = ({
   // Touch Camera Drag State
   const lookTouchId = useRef<number | null>(null);
   const lastLookPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Multi-Gesture STRIKE Button State (Tap = Quick Strike, Hold = Heavy, Swipe Up = Vault/Glide, Swipe Down = Dash/Roll)
+  const strikeGestureStart = useRef<{ x: number; y: number; time: number } | null>(null);
 
   const handleJoystickUpdate = (clientX: number, clientY: number) => {
     if (!joyRef.current) return;
@@ -126,8 +165,6 @@ export const HUD: React.FC<HUDProps> = ({
     }
 
     setJoyKnob({ x: dx, y: dy });
-    // Pushing joystick UP yields negative dy -> forward (-Z)
-    // Pushing joystick RIGHT yields positive dx -> right (+X)
     onVirtualMove(dx / maxRadius, dy / maxRadius);
   };
 
@@ -168,11 +205,10 @@ export const HUD: React.FC<HUDProps> = ({
         }
       }}
     >
-      {/* TOP BAR: Glassmorphic Survival Telemetry (HP, Food, Water, Eggs) & Adventure Operations */}
+      {/* TOP BAR: Compact Survival Telemetry, GTA V Character Wheel & Day-Night Cycle */}
       <div className="flex flex-wrap items-start justify-between gap-3">
-        {/* Top-Left: Survival Metabolism & Multi-Stage Adventure Operations */}
+        {/* Top-Left: Survival Metabolism + Character Roster Wheel */}
         <div className="flex flex-col gap-2 max-w-sm w-full sm:w-auto">
-          {/* Glassmorphic Vitality + Food + Water + Eggs Panel */}
           <div className="bg-zinc-950/75 border border-white/15 rounded-xl p-3 shadow-2xl pointer-events-auto">
             <div className="flex items-center justify-between gap-2 mb-1.5">
               <div className="flex items-center gap-1.5 min-w-0">
@@ -184,6 +220,16 @@ export const HUD: React.FC<HUDProps> = ({
                     FLIGHT
                   </span>
                 )}
+                {stats.isPilotingSpaceFighter && (
+                  <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-cyan-500/25 text-cyan-200 border border-cyan-400/50 rounded shrink-0">
+                    6-DOF JET
+                  </span>
+                )}
+                {stats.isMountedOnBeast && (
+                  <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-emerald-500/25 text-emerald-200 border border-emerald-400/50 rounded shrink-0">
+                    DINO MOUNT
+                  </span>
+                )}
               </div>
               <span className="text-xs font-mono font-bold text-white tabular-nums shrink-0">
                 {Math.ceil(stats.hp)} / {stats.maxHp} HP
@@ -191,53 +237,72 @@ export const HUD: React.FC<HUDProps> = ({
             </div>
 
             {/* HP Bar */}
-            <div className="w-full sm:w-64 h-2.5 bg-black/70 rounded-full overflow-hidden border border-white/10 mb-2.5">
+            <div className="w-full sm:w-64 h-2.5 bg-black/70 rounded-full overflow-hidden border border-white/10 mb-2">
               <div
                 className="h-full bg-gradient-to-r from-rose-600 via-red-500 to-amber-400 transition-all duration-150"
                 style={{ width: `${hpPct}%` }}
               />
             </div>
 
-            {/* Food (Caloric Energy) Bar */}
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-300/90">
-                Caloric Nutrition (Food)
-              </span>
-              <span className="text-[10px] font-mono text-amber-200 tabular-nums">
-                {Math.round(stats.food)} / {stats.maxFood} kcal
-              </span>
-            </div>
-            <div className="w-full sm:w-64 h-1.5 bg-black/70 rounded-full overflow-hidden border border-white/10 mb-2">
-              <div
-                className="h-full bg-gradient-to-r from-amber-600 to-yellow-400 transition-all duration-150"
-                style={{ width: `${foodPct}%` }}
-              />
-            </div>
-
-            {/* Water (Cellular Hydration) Bar */}
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-300/90">
-                Cellular Hydration (Water)
-              </span>
-              <span className="text-[10px] font-mono text-cyan-200 tabular-nums">
-                {Math.round(stats.water)} / {stats.maxWater} mL
-              </span>
-            </div>
-            <div className="w-full sm:w-64 h-1.5 bg-black/70 rounded-full overflow-hidden border border-white/10 mb-2.5">
-              <div
-                className="h-full bg-gradient-to-r from-sky-600 to-cyan-300 transition-all duration-150"
-                style={{ width: `${waterPct}%` }}
-              />
+            {/* Food & Water Compact Bars */}
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <div className="flex items-center justify-between text-[9px] font-mono text-amber-200 mb-0.5">
+                  <span>FOOD</span>
+                  <span>{Math.round(stats.food)} kcal</span>
+                </div>
+                <div className="w-full h-1.5 bg-black/70 rounded-full overflow-hidden border border-white/10">
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-600 to-yellow-400 transition-all duration-150"
+                    style={{ width: `${foodPct}%` }}
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between text-[9px] font-mono text-cyan-200 mb-0.5">
+                  <span>WATER</span>
+                  <span>{Math.round(stats.water)} mL</span>
+                </div>
+                <div className="w-full h-1.5 bg-black/70 rounded-full overflow-hidden border border-white/10">
+                  <div
+                    className="h-full bg-gradient-to-r from-sky-600 to-cyan-300 transition-all duration-150"
+                    style={{ width: `${waterPct}%` }}
+                  />
+                </div>
+              </div>
             </div>
 
-            {/* Equipped Gear & Egg Count Summary Line */}
-            <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-300">
+            {/* Equipped Gear & Day-Night Status Line */}
+            <div className="pt-1.5 border-t border-white/10 flex flex-wrap items-center justify-between gap-2 text-[10px] text-zinc-300">
               <span className="truncate font-medium text-sky-200">{weapon.name}</span>
-              <div className="flex items-center gap-2 font-mono text-[10px]">
-                <span className="text-amber-300">🥚 Eggs: {stats.eggsCollected}</span>
-                <span className="text-zinc-500">|</span>
+              <div className="flex items-center gap-1.5 font-mono">
+                <span className="text-amber-300">🥚 {stats.eggsCollected}</span>
+                <span className="text-zinc-600">|</span>
                 <span className="text-emerald-300">{armor.defense} DEF</span>
               </div>
+            </div>
+
+            {/* GTA V Playable Character Swap Bar ([1] Demon Hunter, [2] S.W.A.T., [3] Knight) */}
+            <div className="mt-2 pt-2 border-t border-white/10 flex items-center gap-1.5">
+              {HERO_ROSTER_META.map((hero) => {
+                const active = activeCharacterId === hero.id;
+                return (
+                  <button
+                    key={hero.id}
+                    type="button"
+                    onClick={() => onSwapCharacter?.(hero.id)}
+                    className={`flex-1 px-2 py-1 rounded-lg border text-[10px] font-bold transition-all cursor-pointer flex flex-col items-start ${
+                      active
+                        ? `${hero.accent} shadow-md scale-[1.02]`
+                        : 'bg-black/50 border-white/10 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                    title={`Press [${hero.key}] for GTA V Sky-Camera Swap to ${hero.shortName}`}
+                  >
+                    <span className="font-mono text-[9px] opacity-80">[{hero.key}] {hero.role}</span>
+                    <span className="truncate w-full text-left">{hero.shortName}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -286,8 +351,22 @@ export const HUD: React.FC<HUDProps> = ({
           </div>
         )}
 
-        {/* Top-Right: Glassmorphic Utility Buttons (Beastopedia, Forge, Pause) */}
-        <div className="flex items-center gap-2 pointer-events-auto">
+        {/* Top-Right: Day-Night Cycle Indicator & Utility Buttons (3D Atlas, Forge, Menu) */}
+        <div className="flex flex-wrap items-center gap-2 pointer-events-auto">
+          <button
+            type="button"
+            onClick={onToggleDayNight}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer shadow-lg flex items-center gap-1.5 ${
+              isNight
+                ? 'bg-indigo-950/85 border-indigo-400/60 text-indigo-200'
+                : 'bg-amber-950/80 border-amber-400/50 text-amber-200'
+            }`}
+            title="Press [N] to shift Day/Night cycle (Night increases beast aggression & unlocks nocturnal Glow-Moss / Magma Cores)"
+          >
+            <span>{isNight ? '🌙 Night' : '☀ Day'}</span>
+            <span className="font-mono text-[10px] opacity-90">{formattedClock} (N)</span>
+          </button>
+
           <button
             type="button"
             onClick={onOpenBeastopedia}
@@ -314,7 +393,7 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
       </div>
 
-      {/* CENTER Reticle, Screen-Space Hit Markers & Contextual Prompts */}
+      {/* CENTER Reticle, Screen-Space Hit Markers, Focus Trail Badge & Contextual Prompts */}
       <div className="my-auto flex flex-col items-center justify-center pointer-events-none">
         <div className="relative w-7 h-7 flex items-center justify-center">
           <div className="w-1.5 h-1.5 rounded-full bg-sky-300 shadow-[0_0_8px_#38bdf8] opacity-85" />
@@ -334,11 +413,17 @@ export const HUD: React.FC<HUDProps> = ({
           )}
         </div>
 
+        {focusVisionActive && (
+          <div className="mt-2 px-3 py-1 rounded-full bg-sky-950/85 border border-sky-400/60 text-[10px] font-mono font-bold text-sky-200 tracking-wider uppercase shadow-lg">
+            👁 Focus Vision Active · 3D Beast Footprint Trail Illuminated
+          </div>
+        )}
+
         {interactPrompt && (
           <button
             type="button"
             onClick={onInteract}
-            className="mt-4 px-4 py-2 bg-zinc-950/85 hover:bg-zinc-900 border border-sky-400/50 rounded-xl text-xs font-bold text-sky-200 tracking-wide shadow-2xl pointer-events-auto animate-bounce cursor-pointer"
+            className="mt-3 px-4 py-2 bg-zinc-950/85 hover:bg-zinc-900 border border-sky-400/50 rounded-xl text-xs font-bold text-sky-200 tracking-wide shadow-2xl pointer-events-auto animate-bounce cursor-pointer"
           >
             {interactPrompt}
           </button>
@@ -359,7 +444,7 @@ export const HUD: React.FC<HUDProps> = ({
         )}
       </div>
 
-      {/* BOTTOM BAR: Calibrated Joystick (Left) & Survival / Flight / Combat Controls (Right) */}
+      {/* BOTTOM BAR: Calibrated Joystick (Left) & Survival / Flight / Multi-Gesture Combat Controls (Right) */}
       <div className="flex items-end justify-between gap-4">
         {/* Bottom-Left: Touch Virtual Joystick */}
         <div className="flex items-center gap-3">
@@ -410,14 +495,14 @@ export const HUD: React.FC<HUDProps> = ({
           </div>
 
           <div className="hidden md:flex flex-col text-[11px] text-zinc-300 bg-zinc-950/75 border border-white/15 px-3 py-2 rounded-xl">
-            <span className="text-sky-300 font-bold">Mithril Controls</span>
-            <span>WASD Move · Space Jump / Fly Up</span>
-            <span>V Flight Wings · Ctrl Descend · Shift Dodge</span>
-            <span>Q Eat Food · C Drink Water · H Hatch Egg</span>
+            <span className="text-sky-300 font-bold">Mithril & Roster Controls</span>
+            <span>WASD Move · 1/2/3 Swap Hero · N Day/Night</span>
+            <span>V Flight · F Focus Trail · G Jet · T Mount Dino</span>
+            <span>Q Ration · C Water · H Egg · Shift Dodge</span>
           </div>
         </div>
 
-        {/* Bottom-Right: Survival Pouches, Jump/Fly, and Spear Combat Buttons */}
+        {/* Bottom-Right: Survival Pouches, Jump/Fly, and Multi-Gesture Strike Button */}
         <div className="flex flex-wrap items-center justify-end gap-2 pointer-events-auto max-w-xl">
           {/* Eat Ration (Q) */}
           <button
@@ -467,13 +552,13 @@ export const HUD: React.FC<HUDProps> = ({
             </span>
           </button>
 
-          {/* Hunter Focus (F) */}
+          {/* Hunter Focus & 3D Footprint Tracking Trail (F) */}
           <button
             type="button"
             onClick={onToggleFocus}
             className={`px-3 py-2 rounded-xl border text-xs font-bold flex flex-col items-center min-w-[64px] active:scale-95 transition-all cursor-pointer shadow-lg ${
               focusVisionActive
-                ? 'bg-sky-900/80 border-sky-400 text-sky-200'
+                ? 'bg-sky-900/85 border-sky-400 text-sky-200 shadow-[0_0_16px_rgba(56,189,248,0.45)]'
                 : 'bg-zinc-950/80 border-white/15 text-zinc-300'
             }`}
           >
@@ -516,20 +601,59 @@ export const HUD: React.FC<HUDProps> = ({
             Dodge
           </button>
 
-          {/* Spear Attack / Heavy Charge */}
+          {/* Multi-Gesture STRIKE Button (Tap = Slash/Burst, Hold = Heavy/Bash, Swipe Up = Vault Glide, Swipe Down = Dash) */}
           <button
             type="button"
-            onMouseDown={onAttack}
-            onMouseUp={onChargeRelease}
+            onMouseDown={(e) => {
+              strikeGestureStart.current = { x: e.clientX, y: e.clientY, time: performance.now() };
+              onAttack();
+            }}
+            onMouseUp={(e) => {
+              const start = strikeGestureStart.current;
+              strikeGestureStart.current = null;
+              if (start) {
+                const dy = e.clientY - start.y;
+                if (dy < -24) {
+                  if (onStrikeGesture) onStrikeGesture('swipe_up');
+                  else onJump();
+                  return;
+                }
+                if (dy > 24) {
+                  if (onStrikeGesture) onStrikeGesture('swipe_down');
+                  else onDodge();
+                  return;
+                }
+              }
+              onChargeRelease();
+            }}
             onTouchStart={(e) => {
               e.stopPropagation();
+              const t = e.changedTouches[0];
+              strikeGestureStart.current = { x: t.clientX, y: t.clientY, time: performance.now() };
               onAttack();
             }}
             onTouchEnd={(e) => {
               e.stopPropagation();
+              const t = e.changedTouches[0];
+              const start = strikeGestureStart.current;
+              strikeGestureStart.current = null;
+              if (start && t) {
+                const dy = t.clientY - start.y;
+                if (dy < -24) {
+                  if (onStrikeGesture) onStrikeGesture('swipe_up');
+                  else onJump();
+                  return;
+                }
+                if (dy > 24) {
+                  if (onStrikeGesture) onStrikeGesture('swipe_down');
+                  else onDodge();
+                  return;
+                }
+              }
               onChargeRelease();
             }}
             className="px-5 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-red-600 hover:from-amber-400 hover:to-red-500 text-black font-black text-xs sm:text-sm uppercase tracking-wider shadow-xl border border-amber-300 active:scale-95 transition-all cursor-pointer"
+            title="Tap: Strike/Burst | Hold: Heavy Cleave | Swipe Up: Demon Vault / Slam | Swipe Down: Shadow Dash"
           >
             ⚔ Strike
           </button>

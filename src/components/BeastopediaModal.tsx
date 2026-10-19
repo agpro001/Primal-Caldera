@@ -14,6 +14,7 @@ import {
   BEASTOPEDIA_ENTRIES,
   CHARACTER_ATLAS_ENTRIES,
   ENVIRONMENT_ATLAS_ENTRIES,
+  SKETCHFAB_ASSET_REGISTRY,
   type EnvironmentModelId,
 } from '../game/logic/beastopediaData.ts';
 import { MaterialCache } from '../game/graphics/materials.ts';
@@ -22,11 +23,13 @@ import {
   buildHunterModel,
   buildTribalNPCModel,
   buildEnvironmentShowcaseModel,
-} from '../game/graphics/proceduralModels.ts';
+  createSculptedOrganicGeometry,
+} from '../game/engine/assetLoaderAndRigging.ts';
 import {
   generateReferenceImageDataUrl,
   REFERENCE_ART_SPECS,
 } from '../game/graphics/referenceArt.ts';
+import type { PlayableCharacterId } from '../types/game.ts';
 
 interface BeastopediaModalProps {
   knowledge: Record<BeastSpecies, BeastKnowledgeLevel>;
@@ -45,8 +48,8 @@ export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
   const [category, setCategory] = useState<AtlasCategory>('beasts');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [selectedSpecies, setSelectedSpecies] = useState<BeastSpecies>('sky_dragon');
-  const [selectedCharId, setSelectedCharId] = useState<NPCId | 'hunter_koa'>('hunter_koa');
-  const [selectedEnvId, setSelectedEnvId] = useState<EnvironmentModelId>('snow_mountain');
+  const [selectedCharId, setSelectedCharId] = useState<NPCId | 'hunter_koa' | PlayableCharacterId>('demon_hunter');
+  const [selectedEnvId, setSelectedEnvId] = useState<EnvironmentModelId>('trees_canopy');
 
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -64,7 +67,9 @@ export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
     category === 'beasts'
       ? selectedSpecies
       : category === 'characters'
-      ? selectedCharId
+      ? selectedCharId === 'demon_hunter' || selectedCharId === 'swat_operator' || selectedCharId === 'bulky_knight'
+        ? 'hunter_koa'
+        : selectedCharId
       : selectedEnvId;
 
   const referenceImageUrl = React.useMemo(
@@ -110,15 +115,22 @@ export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
 
     const matCache = new MaterialCache();
 
-    // Minimalist Pedestal
-    const pedGeo = new THREE.CylinderGeometry(3.2, 3.5, 0.28, 36);
+    // Minimalist Pedestal (Sculpted Organic Geometry - Zero Primitives)
+    const pedGeo = createSculptedOrganicGeometry(
+      [
+        [0.0, 3.5, 3.5],
+        [1.0, 3.2, 3.2],
+      ],
+      36,
+      0.28,
+      -0.28
+    );
     const pedMat = new THREE.MeshStandardMaterial({
       color: 0x111827,
       roughness: 0.4,
       metalness: 0.6,
     });
     const pedestal = new THREE.Mesh(pedGeo, pedMat);
-    pedestal.position.y = -0.14;
     pedestal.receiveShadow = true;
     scene.add(pedestal);
 
@@ -143,30 +155,37 @@ export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
     if (category === 'beasts') {
       beastRig = buildBeastModel(selectedSpecies, matCache);
       const scaleMap: Record<BeastSpecies, number> = {
-        raptor: 1.0,
-        snapjaw: 0.72,
-        brontoshell: 0.68,
-        thunderhorn: 0.75,
-        frostfang: 0.62,
-        sky_dragon: 0.56,
-        caldera_titan: 0.58,
+        raptor: 0.85,
+        snapjaw: 0.68,
+        brontoshell: 0.62,
+        thunderhorn: 0.68,
+        frostfang: 0.58,
+        sky_dragon: 0.48,
+        caldera_titan: 0.52,
       };
       beastRig.root.scale.setScalar(scaleMap[selectedSpecies]);
       if (selectedSpecies === 'sky_dragon') {
-        beastRig.root.position.y = 0.6;
+        beastRig.root.position.y = 0.4;
       }
       turntable.add(beastRig.root);
     } else if (category === 'characters') {
-      if (selectedCharId === 'hunter_koa') {
-        hunterRig = buildHunterModel(matCache, 'thunder_warden_aegis');
-        hunterRig.root.scale.setScalar(1.38);
+      if (
+        selectedCharId === 'demon_hunter' ||
+        selectedCharId === 'swat_operator' ||
+        selectedCharId === 'bulky_knight' ||
+        selectedCharId === 'hunter_koa'
+      ) {
+        const charHero: PlayableCharacterId =
+          selectedCharId === 'hunter_koa' ? 'demon_hunter' : selectedCharId;
+        hunterRig = buildHunterModel(matCache, 'thunder_warden_aegis', charHero);
+        hunterRig.root.scale.setScalar(1.25);
         if (hunterRig.wingsGroup) {
           hunterRig.wingsGroup.visible = true;
         }
         turntable.add(hunterRig.root);
       } else {
         const npcGroup = buildTribalNPCModel(selectedCharId, matCache);
-        npcGroup.scale.setScalar(1.38);
+        npcGroup.scale.setScalar(1.25);
         turntable.add(npcGroup);
       }
     } else {
@@ -201,6 +220,7 @@ export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
 
     const animate = () => {
       animId = requestAnimationFrame(animate);
+      const dt = clock.getDelta();
       const elapsed = clock.getElapsedTime();
       if (!isDragging) {
         manualYaw += 0.0065;
@@ -208,6 +228,11 @@ export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
       turntable.rotation.y = manualYaw;
 
       if (beastRig) {
+        beastRig.controller.uniforms.uStridePhase.value = elapsed * 5.0;
+        beastRig.controller.uniforms.uStrideAmp.value = 0.35;
+        beastRig.controller.uniforms.uTailWave.value = 0.4;
+        beastRig.controller.uniforms.uWingFlap.value = selectedSpecies === 'sky_dragon' ? 0.55 : 0.0;
+        beastRig.controller.update(dt, elapsed);
         beastRig.head.rotation.x = Math.sin(elapsed * 2.2) * 0.08;
         beastRig.tail.rotation.y = Math.cos(elapsed * 2.8) * 0.18;
         if (beastRig.leftWing && beastRig.rightWing) {
@@ -217,9 +242,10 @@ export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
         }
       }
       if (hunterRig) {
-        if (hunterRig.cape) {
-          hunterRig.cape.rotation.x = 0.16 + Math.sin(elapsed * 3.5) * 0.08;
-        }
+        hunterRig.controller.uniforms.uStridePhase.value = elapsed * 4.5;
+        hunterRig.controller.uniforms.uStrideAmp.value = 0.28;
+        hunterRig.controller.uniforms.uHeadYaw.value = Math.sin(elapsed * 1.5) * 0.25;
+        hunterRig.controller.update(dt, elapsed);
         if (hunterRig.leftWing && hunterRig.rightWing) {
           const wFlap = Math.sin(elapsed * 3.2) * 0.25;
           hunterRig.leftWing.rotation.y = wFlap;
@@ -425,72 +451,64 @@ export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
 
             {/* Visual Stage: 2D Concept Art + 3D Turntable OR Sketchfab 3D Embed */}
             {viewMode === 'sketchfab' ? (
-              <div className="rounded-2xl overflow-hidden border border-white/15 bg-black/70 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-medium text-white">
-                      Mastercraft Mithril Armor set for Beyond Skyrim2 · Interactive Sketchfab 3D Viewer
-                    </h3>
-                    <p className="text-xs text-zinc-400">
-                      Official 3D Character Armor Reference by Royraj Vichaidit on Sketchfab, paired with our real-time playable Mithril Knight rig.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('split')}
-                    className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-sky-300 font-mono cursor-pointer"
-                  >
-                    Back to Split 2D+3D
-                  </button>
-                </div>
+              (() => {
+                const sfAsset =
+                  category === 'beasts'
+                    ? SKETCHFAB_ASSET_REGISTRY.find((a) =>
+                        selectedSpecies === 'sky_dragon'
+                          ? a.id === 'dragon_boss'
+                          : selectedSpecies === 'brontoshell' || selectedSpecies === 'caldera_titan'
+                          ? a.id === 'armor_dinosaur'
+                          : selectedSpecies === 'snapjaw' || selectedSpecies === 'raptor'
+                          ? a.id === 'jason_t'
+                          : a.id === 'triceratops_beetle'
+                      ) || SKETCHFAB_ASSET_REGISTRY[3]
+                    : category === 'characters'
+                    ? SKETCHFAB_ASSET_REGISTRY.find((a) => a.id === selectedCharId) || SKETCHFAB_ASSET_REGISTRY[0]
+                    : SKETCHFAB_ASSET_REGISTRY.find((a) =>
+                        selectedEnvId === 'trees_canopy'
+                          ? a.id === 'mystic_forest'
+                          : selectedEnvId === 'grass_shrubs'
+                          ? a.id === 'fern_forest'
+                          : selectedEnvId === 'stones_boulders'
+                          ? a.id === 'space_fighter'
+                          : a.id === 'diorama_forest'
+                      ) || SKETCHFAB_ASSET_REGISTRY[8];
 
-                {/* Exact user-provided Sketchfab Embed Wrapper */}
-                <div className="sketchfab-embed-wrapper w-full h-[360px] rounded-xl overflow-hidden border border-white/10">
-                  <iframe
-                    title="Mastercraft Mithril Armor set for Beyond Skyrim2"
-                    className="w-full h-full"
-                    frameBorder="0"
-                    allowFullScreen
-                    allow="autoplay; fullscreen; xr-spatial-tracking"
-                    src="https://sketchfab.com/models/3ae9057e840e4da0bf05269865c29c91/embed"
-                  />
-                  <p
-                    style={{
-                      fontSize: '13px',
-                      fontWeight: 'normal',
-                      margin: '5px',
-                      color: '#9ca3af',
-                    }}
-                  >
-                    <a
-                      href="https://sketchfab.com/3d-models/mastercraft-mithril-armor-set-for-beyond-skyrim2-3ae9057e840e4da0bf05269865c29c91"
-                      target="_blank"
-                      rel="nofollow noreferrer"
-                      style={{ fontWeight: 'bold', color: '#38bdf8' }}
-                    >
-                      Mastercraft Mithril Armor set for Beyond Skyrim2
-                    </a>{' '}
-                    by{' '}
-                    <a
-                      href="https://sketchfab.com/12oyraj"
-                      target="_blank"
-                      rel="nofollow noreferrer"
-                      style={{ fontWeight: 'bold', color: '#38bdf8' }}
-                    >
-                      Royraj Vichaidit
-                    </a>{' '}
-                    on{' '}
-                    <a
-                      href="https://sketchfab.com"
-                      target="_blank"
-                      rel="nofollow noreferrer"
-                      style={{ fontWeight: 'bold', color: '#38bdf8' }}
-                    >
-                      Sketchfab
-                    </a>
-                  </p>
-                </div>
-              </div>
+                return (
+                  <div className="rounded-2xl overflow-hidden border border-white/15 bg-black/70 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-medium text-white">
+                          {sfAsset.title} · Interactive Sketchfab 3D Viewer
+                        </h3>
+                        <p className="text-xs text-zinc-400">
+                          {sfAsset.roleOrBiome} · Local Runtime: <span className="text-sky-300 font-mono">{sfAsset.localModelPath}</span>
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('split')}
+                        className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-sky-300 font-mono cursor-pointer"
+                      >
+                        Back to Split 2D+3D
+                      </button>
+                    </div>
+
+                    <div className="sketchfab-embed-wrapper w-full h-[360px] rounded-xl overflow-hidden border border-white/10">
+                      <iframe
+                        key={sfAsset.embedUrl}
+                        title={sfAsset.title}
+                        className="w-full h-full"
+                        frameBorder="0"
+                        allowFullScreen
+                        allow="autoplay; fullscreen; xr-spatial-tracking"
+                        src={sfAsset.embedUrl}
+                      />
+                    </div>
+                  </div>
+                );
+              })()
             ) : (
               <div
                 className={`grid gap-4 ${

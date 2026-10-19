@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { BeastSpecies, BeastopediaEntry, NPCId } from '../../types/game.ts';
+import type { BeastSpecies, BeastopediaEntry, NPCId, PlayableCharacterId } from '../../types/game.ts';
 
 export type EnvironmentModelId =
   | 'snow_mountain'
@@ -13,8 +13,132 @@ export type EnvironmentModelId =
   | 'grass_shrubs'
   | 'river_fish';
 
+export interface SketchfabAssetSpec {
+  id: string;
+  title: string;
+  category: 'character' | 'creature' | 'vehicle' | 'environment';
+  sketchfabModelId: string;
+  embedUrl: string;
+  localModelPath: string;
+  roleOrBiome: string;
+  skeletalSummary: string;
+}
+
+export const SKETCHFAB_ASSET_REGISTRY: SketchfabAssetSpec[] = [
+  {
+    id: 'demon_hunter',
+    title: 'Demon Hunter',
+    category: 'character',
+    sketchfabModelId: 'ff6a14371bc347d9a1526f5e64b29327',
+    embedUrl: 'https://sketchfab.com/models/ff6a14371bc347d9a1526f5e64b29327/embed',
+    localModelPath: '/models/demon_hunter.glb',
+    roleOrBiome: 'Playable Hero 1 · Agile Melee & Aerial Glaive Specialist',
+    skeletalSummary: 'Breathing chest, 4s head scan, 22° sprint lean, Twin Slash 45° spine twist, Demon Vault 360° spin & spectral wings, Shadow Dash.',
+  },
+  {
+    id: 'swat_operator',
+    title: 'S.W.A.T. Operator with Gun',
+    category: 'character',
+    sketchfabModelId: '9e82fabf26194896b5ad4a364d864eab',
+    embedUrl: 'https://sketchfab.com/models/9e82fabf26194896b5ad4a364d864eab/embed',
+    localModelPath: '/models/S.W.A.T.usdz',
+    roleOrBiome: 'Playable Hero 2 · Tactical Ranged Marksman & Heavy Ordnance Specialist',
+    skeletalSummary: 'Upper/lower body split aim, ADS shoulder stock alignment, damped recoil impulse, muzzle flash PointLight & brass shell ejection, Tactical Dive.',
+  },
+  {
+    id: 'bulky_knight',
+    title: 'Bulky Knight',
+    category: 'character',
+    sketchfabModelId: '002a90cbf12941b792f968554687502c',
+    embedUrl: 'https://sketchfab.com/models/002a90cbf12941b792f968554687502c/embed',
+    localModelPath: '/models/bulky_knight.glb',
+    roleOrBiome: 'Playable Hero 3 · Heavy Tank, Campfire Forge Master & Leviathan Grappler',
+    skeletalSummary: 'Heavy footstep shake & heel dust puffs, spring-lag pauldrons, 35° Heavy Cleave windup, Iron Bulwark 80% block, Earthshatter Slam.',
+  },
+  {
+    id: 'dragon_boss',
+    title: 'Dragon Character 3D (Apex Boss)',
+    category: 'creature',
+    sketchfabModelId: '7bad9ad76293430f8e5bb24cd499c53b',
+    embedUrl: 'https://sketchfab.com/models/7bad9ad76293430f8e5bb24cd499c53b/embed',
+    localModelPath: '/models/Dragon_Character_3d_by_Oscar_Creativo.usdz',
+    roleOrBiome: 'OP-01 Guardian · DAE Diorama Forest & Wyvern Ravine',
+    skeletalSummary: 'Multi-jointed wing flapping with -0.4 rad phalange phase wave, 3-segment neck look-at tracking, 40° Jaw fire breath, S-curve tail whip.',
+  },
+  {
+    id: 'armor_dinosaur',
+    title: 'Armor Dinosaur',
+    category: 'creature',
+    sketchfabModelId: '0f50cb2eb3ed4242815382371518de01',
+    embedUrl: 'https://sketchfab.com/models/0f50cb2eb3ed4242815382371518de01/embed',
+    localModelPath: '/models/armor_dinasour.glb',
+    roleOrBiome: 'Heavy Armored Terrestrial Juggernaut · Fern Forest',
+    skeletalSummary: 'Heavy alternating stomp gait, 0.2x dorsal armor spark deflection vs 1.8x exposed Core, 14m/s Bull Charge, tamable Spine_Mount_Socket.',
+  },
+  {
+    id: 'jason_t',
+    title: 'Jason T — Apex Ravine Stalker',
+    category: 'creature',
+    sketchfabModelId: 'e16a75e16de8468bbf7f39d8f8ba5daa',
+    embedUrl: 'https://sketchfab.com/models/e16a75e16de8468bbf7f39d8f8ba5daa/embed',
+    localModelPath: '/models/jason_t.glb',
+    roleOrBiome: 'High-Speed Predatory Stalker (River Snapjaw Leviathan Class)',
+    skeletalSummary: 'Low horizontal spine posture, avian-stabilized head lock, rapid digitigrade stride, 12m Ambush Pounce, Head-shot lunge interrupt.',
+  },
+  {
+    id: 'triceratops_beetle',
+    title: 'Triceratops Beetle',
+    category: 'creature',
+    sketchfabModelId: 'd9d16acc41084435b32740806c164e6d',
+    embedUrl: 'https://sketchfab.com/models/d9d16acc41084435b32740806c164e6d/embed',
+    localModelPath: '/models/triceratops.glb',
+    roleOrBiome: 'Chitinous Horned Behemoth · Mystic Forest',
+    skeletalSummary: '6-legged insectoid tripod gait (L1,R2,L3 vs R1,L2,R3), 3-horned cranial uppercut, 55° split Elytra wing-casings with high-frequency buzz.',
+  },
+  {
+    id: 'space_fighter',
+    title: 'Space Fighter (6-DOF Intercept Craft)',
+    category: 'vehicle',
+    sketchfabModelId: 'e76613664871441289d37d44a4bbcd3b',
+    embedUrl: 'https://sketchfab.com/models/e76613664871441289d37d44a4bbcd3b/embed',
+    localModelPath: '/models/spacecraft.glb',
+    roleOrBiome: 'Base Camp Landing Pad · 6-DOF Atmospheric Fighter',
+    skeletalSummary: '-65° articulating Canopy_Node, auto-retracting Landing Gear above 5m, tilting Ailerons/Rudder, Dual Plasma Cannons & Afterburner.',
+  },
+  {
+    id: 'mystic_forest',
+    title: 'Zone 1 — Mystic Forest',
+    category: 'environment',
+    sketchfabModelId: '92d36829b8ab483fa39bf44289f7b089',
+    embedUrl: 'https://sketchfab.com/models/92d36829b8ab483fa39bf44289f7b089/embed',
+    localModelPath: '/models/a_forest_3_with_a_road_at_night_for_game.glb',
+    roleOrBiome: 'Southern Base Camp, Space Fighter Pad & Triceratops Beetle Habitat',
+    skeletalSummary: 'Ancient glowing trees, volumetric fog, floating cyan spores, Campfire Forge, and nocturnal Luminous Night-Spores.',
+  },
+  {
+    id: 'fern_forest',
+    title: 'Zone 2 — Fern Forest Realistic Collection',
+    category: 'environment',
+    sketchfabModelId: 'e3fb505d5f6d47118da83ebacf92929c',
+    embedUrl: 'https://sketchfab.com/models/e3fb505d5f6d47118da83ebacf92929c/embed',
+    localModelPath: '/models/a_forest_3_with_a_road_at_night_for_game.glb',
+    roleOrBiome: 'Central Riverbanks, Bending Fern Undergrowth & Predator Stalking Grounds',
+    skeletalSummary: 'Dense realistic fern clusters that bend when characters walk through them, patrolled by Jason T and Armor Dinosaurs.',
+  },
+  {
+    id: 'diorama_forest',
+    title: 'Zone 3 — DAE Diorama Forest Loner & Wyvern Ravine',
+    category: 'environment',
+    sketchfabModelId: '7a758231ff474a32900f32a82b8ea827',
+    embedUrl: 'https://sketchfab.com/models/7a758231ff474a32900f32a82b8ea827/embed',
+    localModelPath: '/models/a_forest_3_with_a_road_at_night_for_game.glb',
+    roleOrBiome: 'High-Altitude Rocky Canyon Cliffs, Thermal Updrafts & Dragon Nests',
+    skeletalSummary: 'Rising 3D Thermal Updraft Wind Columns (>14m altitude), glowing Sky-Dragon Egg nests, and Apex Dragon Boss.',
+  },
+];
+
 export interface CharacterAtlasEntry {
-  id: NPCId | 'hunter_koa';
+  id: NPCId | 'hunter_koa' | PlayableCharacterId;
   name: string;
   role: string;
   biomeName: string;
@@ -35,16 +159,58 @@ export interface EnvironmentAtlasEntry {
 
 export const CHARACTER_ATLAS_ENTRIES: CharacterAtlasEntry[] = [
   {
+    id: 'demon_hunter',
+    name: 'Demon Hunter (Hero 1)',
+    role: 'Agile Melee & Aerial Glaive Specialist',
+    biomeName: 'All Island Biomes & Thermal Updrafts',
+    weaponOrTool: 'Twin Shadow Glaives · Spectral Glide Wings · Shadow Dash',
+    sketchfabEmbedUrl: 'https://sketchfab.com/models/ff6a14371bc347d9a1526f5e64b29327/embed',
+    lore: 'Loaded from demon_hunter.glb (Model ID: ff6a14371bc347d9a1526f5e64b29327). Features breathing chest expansion, 4-second head scan, 22° sprint lean, 45° spine-twist Twin Slash, 360° Demon Vault with spectral wings, and purple-afterimage Shadow Dash.',
+    traits: [
+      'Tap STRIKE: Twin Slash (140ms horizontal arc + 45° Spine twist)',
+      'Swipe Up STRIKE: Demon Vault & 360° Double-Jump Spectral Wing Glide',
+      'Swipe Down STRIKE: Shadow Dash (8m forward crouch dash with i-frames)',
+    ],
+  },
+  {
+    id: 'swat_operator',
+    name: 'S.W.A.T. Operator with Gun (Hero 2)',
+    role: 'Tactical Ranged Marksman & Heavy Ordnance Specialist',
+    biomeName: 'Fern Forest & Tactical Perimeter',
+    weaponOrTool: 'Scoped Tactical Carbine · Electro-Net Mine · Muzzle Flash & Brass Ejection',
+    sketchfabEmbedUrl: 'https://sketchfab.com/models/9e82fabf26194896b5ad4a364d864eab/embed',
+    lore: 'Loaded from S.W.A.T.usdz (Model ID: 9e82fabf26194896b5ad4a364d864eab). Uses upper/lower body split blending for 8-directional strafing while aiming at the crosshair, ADS shoulder alignment on Focus, damped spring recoil, and full-body Tactical Dive.',
+    traits: [
+      'Hold Focus: Aim-Down-Sights (ADS) raising stock to right shoulder & 12° head tilt',
+      'Tap STRIKE: High-velocity rifle fire with PointLight muzzle flash & brass shell ejection',
+      'Tap DODGE: 450ms full-body combat roll into kneeling firing stance',
+    ],
+  },
+  {
+    id: 'bulky_knight',
+    name: 'Bulky Knight (Hero 3)',
+    role: 'Heavy Tank, Campfire Forge Master & Leviathan Grappler',
+    biomeName: 'Mystic Forest Campfire & Caldera Frontline',
+    weaponOrTool: 'Colossal Greataxe / Siege Lance · Iron Bulwark Shield',
+    sketchfabEmbedUrl: 'https://sketchfab.com/models/002a90cbf12941b792f968554687502c/embed',
+    lore: 'Loaded from bulky_knight.glb (Model ID: 002a90cbf12941b792f968554687502c). Features heavy-impact footsteps that shake the camera and kick up heel dust puffs, spring-lag pauldrons, 80% damage-reduction Iron Bulwark block, and Earthshatter Slam.',
+    traits: [
+      'Tap STRIKE: 35° hip/spine windup into 3.5m Heavy Cleave / Thrust',
+      'Hold Focus: Iron Bulwark shield wall (-80% incoming damage & fireball deflection)',
+      'Swipe Up STRIKE: Earthshatter Slam creating an expanding stun shockwave ring',
+    ],
+  },
+  {
     id: 'hunter_koa',
-    name: 'Koa · Mastercraft Mithril Vanguard (You)',
+    name: 'Koa · Mastercraft Mithril Vanguard',
     role: 'Mithril Dragon-Knight & Island Vanguard',
     biomeName: 'All Island Biomes & Stratospheric Airways',
-    weaponOrTool: 'Mastercraft Mithril Armor Set (Beyond Skyrim2) · Aetherial Flight Wings · Glaive',
+    weaponOrTool: 'Mastercraft Mithril Armor Set (Beyond Skyrim2) · Aetherial Flight Wings',
     sketchfabEmbedUrl: 'https://sketchfab.com/models/3ae9057e840e4da0bf05269865c29c91/embed',
-    lore: 'Clad in the ornate Mastercraft Mithril Armor Set for Beyond Skyrim2 (by Royraj Vichaidit on Sketchfab), forged from silver-blue Mithril plate with gold filigree, royal cape, and deployable Aetherial Glider Wings.',
+    lore: 'Clad in the ornate Mastercraft Mithril Armor Set for Beyond Skyrim2, forged from silver-blue Mithril plate with gold filigree, royal cape, and deployable Aetherial Glider Wings.',
     traits: [
-      '360° Camera-Relative Movement with Calibrated Front/Back/Left/Right Joystick',
-      'Jump (Space) & Aetherial Flight Wings (V) with Real Thermal Updraft Lift Physics',
+      'Instant GTA V Sky-Camera Character Swap between Demon Hunter, S.W.A.T., and Bulky Knight',
+      'Can board the Space Fighter on the landing pad for 6-DOF atmospheric combat',
       'Biologically Grounded Food (kcal), Water (mL) & Creature Egg Survival Metabolism',
     ],
   },
@@ -52,12 +218,11 @@ export const CHARACTER_ATLAS_ENTRIES: CharacterAtlasEntry[] = [
     id: 'chief_kael',
     name: 'Elder Chief Kael',
     role: 'Tribal Chieftain & Lorekeeper',
-    biomeName: 'Campfire Haven (Southern Valley)',
-    weaponOrTool: 'Carved Mammoth-Ivory Totem Staff & Feathered Headdress',
-    lore: 'Keeper of the island’s oral history and ancestral maps. Chief Kael guides hunters at the central Campfire Haven, marking the paths toward the Cold Snow Mountains, Crystal River, and Caldera Summit.',
+    biomeName: 'Mystic Forest Base Camp',
+    weaponOrTool: 'Carved Mammoth-Ivory Totem Staff',
+    lore: 'Keeper of the island’s oral history and ancestral maps at the central Campfire Haven.',
     traits: [
-      'Wears ceremonial crimson-and-gold feathered crown and bone chestplate',
-      'Provides hunting counsel and gifts Beast Bones when spoken to with [E]',
+      'Provides hunting counsel and gifts Beast Bones when greeted',
       'Oversees the restoration of the Ancient Signal Tower',
     ],
   },
@@ -66,24 +231,22 @@ export const CHARACTER_ATLAS_ENTRIES: CharacterAtlasEntry[] = [
     name: 'Forge-Master Torak',
     role: 'Obsidian & Bone Weaponsmith',
     biomeName: 'Campfire Haven Workbench',
-    weaponOrTool: 'Heavy Basalt Anvil Hammer & Heat-Resistant Bronto Apron',
-    lore: 'A muscular tribal artisan who tempers volcanic obsidian, coastal carapace plates, and glacial ivory over the roaring camp forge.',
+    weaponOrTool: 'Heavy Basalt Anvil Hammer',
+    lore: 'Tempers volcanic obsidian, armored dinosaur plates, and conductive horns over the camp forge.',
     traits: [
-      'Wields a massive basalt forge hammer with glowing ember runes',
-      'Gifts Obsidian Shards to aid your weapon upgrades when greeted with [E]',
-      'Assists with crafting Tier 2–4 spears, lances, and armor sets',
+      'Gifts Obsidian Shards to aid weapon upgrades',
+      'Assists with crafting Tier 2–4 weapons, armor, rations, and snare traps',
     ],
   },
   {
     id: 'scout_lyra',
     name: 'Scout Lyra',
-    role: 'River Pathfinder & Alpine Ranger',
-    biomeName: 'Crystal River Crossing & Alpine Foothills',
-    weaponOrTool: 'Recurve Bone Bow, Quiver & Camouflage Fern Cloak',
-    lore: 'Stationed near the Crystal River bridge, Lyra monitors the amphibious River Snapjaw Leviathan and tracks the Frostfang Mammoth across the eastern snow peaks.',
+    role: 'River Pathfinder & Ravine Ranger',
+    biomeName: 'Fern Forest River Crossing',
+    weaponOrTool: 'Recurve Bone Bow & Tracking Lens',
+    lore: 'Stationed near the Crystal River bridge, Lyra tracks Jason T and Armor Dinosaurs across the Fern Forest.',
     traits: [
-      'Equipped with a feathered camouflage cloak and river-reed quiver',
-      'Shares tactical intelligence on river and snow-mountain beasts [E]',
+      'Shares tactical intelligence on nocturnal beast aggression and Focus Vision trails',
       'Gifts restorative Sun-Herbs harvested from the riverbank',
     ],
   },
@@ -91,15 +254,39 @@ export const CHARACTER_ATLAS_ENTRIES: CharacterAtlasEntry[] = [
 
 export const ENVIRONMENT_ATLAS_ENTRIES: EnvironmentAtlasEntry[] = [
   {
-    id: 'snow_mountain',
-    name: 'Cold Snow Mountains & Glacial Peaks',
-    category: 'Alpine Biome & Elevation Landform',
-    biomeName: 'Eastern Glacial Range',
-    description: 'Towering jagged granite mountains crowned with deep snow caps, translucent blue glacial ice spires, snow-dusted pine trees, and drifting frost mist.',
+    id: 'trees_canopy',
+    name: 'Zone 1 — Mystic Forest (92d36829b8ab483fa39bf44289f7b089)',
+    category: 'Ecological Zone 1 · Base Camp & Spaceport',
+    biomeName: 'Mystic Forest & Southern Sanctuary',
+    description: 'Ancient glowing forest loaded from a_forest_3_with_a_road_at_night_for_game.glb with volumetric fog, floating cyan spores, Campfire Forge, Space Fighter Landing Pad, and Triceratops Beetles.',
     features: [
-      'Multi-peak 3D mountain geometry with steep rocky crags and snow-capped ridges',
-      'Translucent turquoise-blue glacial ice crystals and frozen boulders',
-      'Home to the colossal Frostfang Glacial Mammoth',
+      'Home to the Campfire Forge and Space Fighter Stone Landing Pad',
+      'Spawns Sun-Herbs by day and glowing Luminous Night-Spores at night',
+      'Patrolled by Chitinous Triceratops Beetles',
+    ],
+  },
+  {
+    id: 'grass_shrubs',
+    name: 'Zone 2 — Fern Forest Realistic Collection (e3fb505d5f6d47118da83ebacf92929c)',
+    category: 'Ecological Zone 2 · Predatory River Valley',
+    biomeName: 'Dense Fern Forest & Crystal Riverbanks',
+    description: 'Dense undergrowth and realistic fern clusters that bend dynamically when characters walk through them, prowled by Jason T and Armor Dinosaurs.',
+    features: [
+      '1,800 instanced fern and grass clusters with proximity vertex bending',
+      'Ambush hunting grounds of Jason T (River Snapjaw Leviathan class)',
+      'Heavy grazing territory of the tamable Armor Dinosaur',
+    ],
+  },
+  {
+    id: 'snow_mountain',
+    name: 'Zone 3 — DAE Diorama Forest Loner & Wyvern Ravine (7a758231ff474a32900f32a82b8ea827)',
+    category: 'Ecological Zone 3 · High-Altitude Crags & Thermals',
+    biomeName: 'Wyvern Ravine, Alpine Crags & Caldera',
+    description: 'High-altitude rocky canyon cliffs with rising 3D Thermal Updraft Wind Columns (>14m altitude), glowing Sky-Dragon Egg nests, and the patrolling Dragon Character 3D boss.',
+    features: [
+      'Rising convective thermal updraft columns for Demon Hunter & Space Fighter lift',
+      'Guarded by the Apex Boss: Dragon Character 3D (7bad9ad76293430f8e5bb24cd499c53b)',
+      'Stealing a glowing Dragon Egg triggers immediate aerial chase',
     ],
   },
   {
@@ -107,346 +294,304 @@ export const ENVIRONMENT_ATLAS_ENTRIES: EnvironmentAtlasEntry[] = [
     name: 'Winding Crystal River & Surrounding Ocean',
     category: 'Hydrology, Riverbank & Marine Ecosystem',
     biomeName: 'Central River Valley & Island Perimeter Ocean',
-    description: 'A sparkling turquoise river fed by alpine snowmelt that winds across the island under a wooden tribal bridge and empties into the vast surrounding 3D ocean.',
+    description: 'A turquoise river fed by alpine snowmelt that winds across the island under a timber bridge and empties into the surrounding 3D ocean.',
     features: [
-      'Animated 3D river currents, shoreline foam, and deep ocean swells',
-      'Lined with smooth wet river stones, reeds, and a timber suspension bridge',
-      'Patrolled by the River Snapjaw Leviathan and schools of swimming 3D fish',
-    ],
-  },
-  {
-    id: 'trees_canopy',
-    name: 'Prehistoric Trees (Jungle Banyan, Alpine Pine & Coastal Palm)',
-    category: '3D Flora & Forest Canopy',
-    biomeName: 'Jungle, Snow Mountains & Black Sand Coast',
-    description: 'Detailed multi-tiered 3D trees including buttress-rooted jungle banyans, snow-capped alpine conifers, and curved coastal coconut palms.',
-    features: [
-      'Flared root buttresses, textured bark trunks, and layered 3D leaf crowns',
-      'Snow-dusted needle tiers on high-altitude mountain pines',
-      'Curved palm trunks with radiating fronds and coconuts along the ocean shore',
+      'Standing in freshwater automatically rehydrates Cellular Hydration (mL)',
+      'Lined with wet river stones, reeds, and timber suspension bridge',
+      'Schools of articulated 3D fish swimming along the channel',
     ],
   },
   {
     id: 'stones_boulders',
-    name: 'Mountain Boulders, River Stones & Volcanic Crags',
-    category: '3D Geology & Rock Formations',
+    name: 'Space Fighter Landing Pad & Volcanic Crags',
+    category: '3D Structures & Geology',
     biomeName: 'All Biomes',
-    description: 'Faceted granite boulders, smooth water-worn river cobbles, mossy jungle rocks, snow-capped alpine stones, and glowing obsidian spires.',
+    description: 'Reinforced stone landing pad housing the playable Space Fighter (e76613664871441289d37d44a4bbcd3b) alongside destructible boulders and geothermal spires.',
     features: [
-      'Multi-rock clusters with moss caps, snow patches, or wet river sheen',
-      'Natural collision and cover landmarks across the 420m x 420m island',
-      'Glowing geothermal crystal seams and volcanic basalt columns',
-    ],
-  },
-  {
-    id: 'grass_shrubs',
-    name: 'Lush Grass Tufts, Berry Shrubs & Prehistoric Ferns',
-    category: '3D Groundcover & Undergrowth',
-    biomeName: 'Jungle Valley, Riverbanks & Foothills',
-    description: 'Dense 3D ground vegetation featuring multi-blade swaying grass tufts, flowering berry shrubs, river reeds, and unfurling prehistoric fern fronds.',
-    features: [
-      'Clustered 3D grass blades with varied heights and natural green-gold hues',
-      'Rounded woody shrubs dotted with vibrant red and amber prehistoric berries',
-      'Rosette fern fronds and tall riverbank cattail reeds',
+      'Interactive Space Fighter boarding within 3.5m of the landing pad',
+      'Destructible barricades when riding a tamed Armor Dinosaur',
+      'Glowing geothermal crystal seams and basalt columns',
     ],
   },
   {
     id: 'river_fish',
-    name: 'Prehistoric Armored River & Ocean Fish',
-    category: 'Aquatic Wildlife',
-    biomeName: 'Crystal River & Coastal Ocean Shallows',
-    description: 'Schools of iridescent prehistoric fish with dorsal sails, pectoral fins, and articulated tail flukes swimming along the river channel and coastal bay.',
+    name: 'Nocturnal & Diurnal Ecosystem Flora/Fauna',
+    category: 'Dynamic Day-Night Ecology',
+    biomeName: 'Island-Wide Ecosystem',
+    description: 'Real-time Day-Night Cycle that shifts lighting, elevates nocturnal beast aggression (+35%), and transforms gathering nodes.',
     features: [
-      'Streamlined 3D body with metallic turquoise scales and orange fins',
-      'Real-time swimming undulation and schooling trajectories in the water',
-      'Brings the river and ocean ecosystems to life',
+      'Daytime: Golden solar illumination & Sun-Herb gathering',
+      'Nighttime: Moonlight shadows, +35% Beast Aggression & Luminous Night-Spores',
+      'Focus Vision [F] reveals glowing 3D footprint tracking trails to nearby beasts',
     ],
   },
 ];
 
 export const BEASTOPEDIA_ENTRIES: Record<BeastSpecies, BeastopediaEntry> = {
-  raptor: {
-    species: 'raptor',
-    name: 'Razor-Crest Raptor Alpha',
-    title: 'Pack Terror of the Ravines',
-    biomeName: 'Emerald Cycad Jungle',
-    threatLevel: 2,
-    diet: 'Carnivorous Pack Predator',
-    sizeLabel: '6.8m Length · 2.6m Height',
-    lore: 'The apex sprinter of the island lowlands. Raptor Alphas coordinate swift flank attacks with terrifying intelligence. Their iridescent crimson-and-gold feathered crests flush bright scarlet to signal pack lunges, while their curved sickle talons can slice through hardened timber.',
-    enrageTrigger: 'At < 40% HP, volcanic adrenaline flushes its crest blazing orange and increases leap speed by 40%.',
-    tells: [
-      {
-        name: 'Pounce Windup',
-        cue: 'Lowers feathered torso to the ground, spreads winged forelimbs, and hisses with a crimson crest flash.',
-        counter: 'Dodge roll sideways perpendicular to its line of sight, then strike the head crest during recovery.',
-      },
-      {
-        name: 'Spinning Tail Whip',
-        cue: 'Pivots head over shoulder and coils its stiffened counterbalance tail.',
-        counter: 'Roll backward out of tail radius or iframe through the sweep.',
-      },
-    ],
-    weaknesses: [
-      {
-        part: 'Feathered Skull Crest',
-        multiplier: '1.55x Damage',
-        breakBonus: 'Drops extra Raptor Talon + causes long knockdown stagger',
-      },
-      {
-        part: 'Counterbalance Tail Plume',
-        multiplier: '1.35x Damage',
-        breakBonus: 'Drops Raptor Scale-Hide + reduces pounce distance',
-      },
-    ],
-    drops: ['Raptor Talon', 'Raptor Scale-Hide', 'Dense Beast Bone'],
-    huntingTips: [
-      'Throw a Lure Stone [R] near a Sinew Snare Trap [T] to lock the Raptor Alpha in place.',
-      'Use Heavy Thrusts [Right Click] on its Feathered Skull Crest right after it misses a lunge.',
-    ],
-  },
-  snapjaw: {
-    species: 'snapjaw',
-    name: 'River Snapjaw Leviathan',
-    title: 'Amphibious Predator of River & Ocean',
-    biomeName: 'Crystal River & Coastal Shallows',
-    threatLevel: 3,
-    diet: 'Piscivorous & Ambush Apex',
-    sizeLabel: '10.4m Length · 3.1m Height',
-    lore: 'An armored prehistoric crocodilian-spinosaur leviathan that rules the winding Crystal River and ocean delta. Covered in turquoise-slate osteoderms with a towering hydro-sail fin and interlocking rows of conical teeth, it surges from the water to ambush prey along the river stones.',
-    enrageTrigger: 'At < 45% HP, its dorsal hydro-sail and gullet glow electric cyan as it unleashes rapid hydro-lunges.',
-    tells: [
-      {
-        name: 'Tidal Jaw Lunge',
-        cue: 'Gapes its massive toothed jaws wide with a cyan bioluminescent throat glow and thrashes its tail.',
-        counter: 'Sidestep onto the dry riverbank boulders and pierce its exposed gullet.',
-      },
-      {
-        name: 'Hydro-Tail Cyclone',
-        cue: 'Arches its dorsal sail fin and curls its armored paddle-tail sideways.',
-        counter: 'Dodge away from the water splash radius, then counter-attack the dorsal sail.',
-      },
-    ],
-    weaknesses: [
-      {
-        part: 'Bioluminescent River Maw',
-        multiplier: '1.60x Damage',
-        breakBonus: 'Drops Raptor Talon + shatters jaw bite power',
-      },
-      {
-        part: 'Serrated Hydro-Sail Crest',
-        multiplier: '1.45x Damage',
-        breakBonus: 'Drops Calcified Coral Stone + triggers long stagger',
-      },
-    ],
-    drops: ['Calcified Coral Stone', 'Raptor Talon', 'Dense Beast Bone'],
-    huntingTips: [
-      'Fight near the wooden river bridge or wide cobble shoals so you have room to dodge its lunge.',
-      'Aim heavy spear thrusts at its towering dorsal sail when it pauses after a charge.',
-    ],
-  },
-  brontoshell: {
-    species: 'brontoshell',
-    name: 'Gilded Brontoshell Behemoth',
-    title: 'Ancient Carapace of the Black Coast',
-    biomeName: 'Black Sand Coast & Ocean Bay',
-    threatLevel: 3,
-    diet: 'Armored Lithovore & Kelp Grazer',
-    sizeLabel: '11.2m Length · 4.5m Height',
-    lore: 'A living fortress of the Black Sand Coast. Over decades, the Brontoshell fuses abyssal coral, hexagonal basalt scutes, and gilded mineral deposits into an impenetrable domed shell. Only its horned beak and spiked tail club remain exposed.',
-    enrageTrigger: 'At < 40% HP, bioluminescent coastal vents along its shell rim glow cyan and its seismic slams create wider shockwaves.',
-    tells: [
-      {
-        name: 'Bulldozer Shell Charge',
-        cue: 'Tucks limbs slightly inward and scrapes the black sand twice with front claws.',
-        counter: 'Lead its charge into coastal boulders or dodge sideways, then punish the exposed head.',
-      },
-      {
-        name: 'Seismic Tail Club Slam',
-        cue: 'Rears its massive front legs skyward before crashing down and swinging its spiked tail mace.',
-        counter: 'Sprint or roll clear of the shockwave ring, then rush in to strike the tail club.',
-      },
-    ],
-    weaknesses: [
-      {
-        part: 'Beaked Head',
-        multiplier: '1.60x Damage',
-        breakBonus: 'Drops Brontoshell Carapace + stuns beast for 4.5s',
-      },
-      {
-        part: 'Spiked Tail Club',
-        multiplier: '1.45x Damage',
-        breakBonus: 'Drops Calcified Coral Stone + shrinks slam shockwave',
-      },
-    ],
-    drops: ['Brontoshell Carapace', 'Calcified Coral Stone', 'Dense Beast Bone'],
-    huntingTips: [
-      'Body strikes deal reduced damage against its domed shell—always target the Beaked Head or Spiked Tail Club.',
-      'Activate Hunter Focus [F] to highlight both weak points clearly against the dark coastal sand.',
-    ],
-  },
-  frostfang: {
-    species: 'frostfang',
-    name: 'Frostfang Glacial Mammoth',
-    title: 'Colossus of the Cold Snow Mountains',
-    biomeName: 'Eastern Cold Snow Mountains',
-    threatLevel: 4,
-    diet: 'Alpine Pine & Permafrost Grazer',
-    sizeLabel: '12.6m Length · 5.4m Height',
-    lore: 'Towering above the snow-dusted pines of the eastern mountain peaks, the Frostfang Glacial Mammoth is draped in thick white-and-slate winter wool, crystalline ice armor along its humped spine, and a pair of colossal spiraled ivory tusks that can shatter granite boulders.',
-    enrageTrigger: 'At < 45% HP, a localized blizzard swirls around its crystalline ice hump and its tusks glow with sub-zero frost.',
-    tells: [
-      {
-        name: 'Avalanche Tusk Gore',
-        cue: 'Raises its muscular trunk high, trumpets a echoing horn blast, and lowers its giant curved ivory tusks.',
-        counter: 'Dodge laterally as it thunders past, then strike the curved tusks while they are wedged in the snow.',
-      },
-      {
-        name: 'Permafrost Stomp',
-        cue: 'Lifts both pillar-like forelegs and crystallizes frost around its hooves.',
-        counter: 'Roll backward out of the frost shockwave and counter-attack its head or ice-ridge hump.',
-      },
-    ],
-    weaknesses: [
-      {
-        part: 'Curved Glacial Ivory Tusks',
-        multiplier: '1.65x Damage',
-        breakBonus: 'Drops Conductive Crest-Horn Ivory + massive stagger window',
-      },
-      {
-        part: 'Crystalline Ice-Ridge Hump',
-        multiplier: '1.45x Damage',
-        breakBonus: 'Drops Dense Beast Bone + weakens frost shockwaves',
-      },
-    ],
-    drops: ['Conductive Crest-Horn', 'Dense Beast Bone', 'Obsidian Shard'],
-    huntingTips: [
-      'Climb the eastern snow mountain trail carefully and watch for its white silhouette against the glacial spires.',
-      'Shattering its Curved Glacial Ivory Tusks deals massive bonus damage and topples the colossus.',
-    ],
-  },
-  thunderhorn: {
-    species: 'thunderhorn',
-    name: 'Thunderhorn Ceratopsian Prime',
-    title: 'Warden of the Geothermal Springs',
-    biomeName: 'Sulfur Geothermal Springs',
-    threatLevel: 4,
-    diet: 'Sulfur-Flora Herbivore (Highly Territorial)',
-    sizeLabel: '12.5m Length · 4.8m Height',
-    lore: 'Inhabiting the boiling mineral terraces, the Thunderhorn channels static electricity through its metallic nasal horn and scalloped bone frill. When threatened, its frill arcs with golden bio-lightning capable of shattering stone.',
-    enrageTrigger: 'At < 45% HP, static arcs crackle continuously across its frill and it chains double gore charges.',
-    tells: [
-      {
-        name: 'Lightning Gore Rush',
-        cue: 'Lowers its huge armored frill, pawing the sulfur crust as golden sparks erupt from its nasal horn.',
-        counter: 'Wait until the final moment of the windup to dodge sideways, then strike the Exposed Thermal Flank.',
-      },
-      {
-        name: 'Cranial Horn Uppercut',
-        cue: 'Dips its snout below knee level and lets out a metallic bellow.',
-        counter: 'Roll diagonally behind its front shoulder and unleash a fully charged Heavy Thrust.',
-      },
-    ],
-    weaknesses: [
-      {
-        part: 'Conductive Nasal Horn',
-        multiplier: '1.65x Damage',
-        breakBonus: 'Guaranteed Conductive Crest-Horn drop + massive knockdown',
-      },
-      {
-        part: 'Exposed Thermal Vent Flank',
-        multiplier: '1.40x Damage',
-        breakBonus: 'Drops Obsidian Shard + slows charge turn rate',
-      },
-    ],
-    drops: ['Conductive Crest-Horn', 'Obsidian Shard', 'Dense Beast Bone'],
-    huntingTips: [
-      'Craft the Brontoshell Carapace Plate before challenging the Thunderhorn to survive its high-voltage charges.',
-      'Sinew Snare Traps interrupt its gore charge and expose its Conductive Nasal Horn at eye level.',
-    ],
-  },
   sky_dragon: {
     species: 'sky_dragon',
-    name: 'Aurelius, Aetherial Sky-Wyvern',
-    title: 'Flying Dragon of the Thermal Airways',
-    biomeName: 'Stratospheric Airways & Caldera Crags',
+    name: 'Dragon Character 3D · Aurelius Sky-Wyvern',
+    title: 'Apex Guardian of OP-01 Wyvern Trench Heist',
+    biomeName: 'Zone 3 · DAE Diorama Forest & Wyvern Ravine',
     threatLevel: 5,
     diet: 'Aerial Apex Carnivore & Thermal Glider',
-    sizeLabel: '18.2m Wingspan · 14.8m Length',
+    sizeLabel: '18.2m Wingspan · Model 7bad9ad76293430f8e5bb24cd499c53b',
     scientificName: 'Draconis aetherius volans',
-    wingLoadingNm2: '342 N/m² (Thermal Updraft Assisted)',
-    metabolicOutput: '14,800 kcal/hr (Exothermic Plasma Gland)',
-    eggSpecs: '22.5 kg · 85°C Volcanic Incubation · 1,250 kcal',
-    lore: 'Soaring high above the island on 18-meter articulated patagium wings, the Aetherial Sky-Wyvern rides convective thermal updrafts rising from the volcanic caldera and glacial ridges. It fiercely guards its glowing Dragon Eggs in high crag nests—stealing an egg triggers immediate aerial pursuit.',
-    enrageTrigger: 'When a Dragon Egg is stolen or HP drops below 45%, its wing membranes and flame-gland maw ignite electric cyan-gold.',
+    wingLoadingNm2: '342 N/m² (Multi-Joint Phalange Wave)',
+    metabolicOutput: '14,800 kcal/hr (Volumetric Fire Breath)',
+    eggSpecs: '22.5 kg · 85°C Volcanic Incubation · Triggers OnEggStolen Chase',
+    lore: 'Loaded from Dragon_Character_3d_by_Oscar_Creativo.usdz (Sketchfab ID: 7bad9ad76293430f8e5bb24cd499c53b). Features multi-jointed wing flapping with -0.4 rad outer phalange phase delay, 3-segment neck look-at tracking, 40° jaw articulation with volumetric fire breath, and a 180° S-curve tail whip. Picking up a Dragon Egg immediately triggers its CHASE state.',
+    enrageTrigger: 'OnEggStolen event or < 45% HP: Wing membranes and throat ignite cyan-orange; dealing 80+ damage to Wing hitboxes forces a GROUNDED crash-land.',
     tells: [
       {
-        name: 'Supersonic Thermal Dive-Bomb',
-        cue: 'Folds its colossal wings inward at altitude and ignites a cyan plasma corona in its jaws.',
-        counter: 'Engage Mithril Flight [V] or lateral dodge-dash perpendicular to its dive vector, then strike its Wing Patagium.',
+        name: 'Volumetric Fire Breath Sweep',
+        cue: '3-segment neck locks onto the active hero, Jaw rotates open 40° (0.7 rad), and throat glows orange-cyan.',
+        counter: 'Use Bulky Knight Iron Bulwark (Focus) to deflect fireballs or strafe behind its neck.',
       },
       {
-        name: 'Aether-Plasma Breath Sweep',
-        cue: 'Hovers with rhythmic wing-beats and inhales glowing blue-gold atmospheric ions.',
-        counter: 'Ascend above its head plane using [Space] in flight mode and pierce the Draconic Flame-Gland Maw.',
+        name: '180° S-Curve Tail Whip & Claw Swoop',
+        cue: 'Tail_01 through Tail_04 coil in a rapid sinusoidal wave when attacked from behind.',
+        counter: 'Shadow Dash with Demon Hunter or fire S.W.A.T. rifle / Space Fighter plasma cannons into its Wing hitboxes (80+ dmg to ground it).',
       },
     ],
     weaknesses: [
       {
-        part: 'Draconic Flame-Gland Maw',
+        part: 'Head & 40° Flame-Gland Jaw',
         multiplier: '1.75x Damage',
-        breakBonus: 'Drops Dragon Scale + grounds aerial breath attacks',
+        breakBonus: 'Drops Aetherial Dragon Scale + interrupts fire breath',
       },
       {
-        part: 'Aetherial Wing Patagium',
+        part: 'Articulated Wing Patagium (Wing_L / Wing_R)',
         multiplier: '1.55x Damage',
-        breakBonus: 'Drops Apex Magma Core + forces the dragon to land for 5s',
+        breakBonus: 'Dealing 80+ damage shreds lift and forces GROUNDED crash-land state',
       },
     ],
     drops: ['Aetherial Dragon Scale', 'Apex Magma Heart', 'Sovereign Titan Fang'],
     huntingTips: [
-      'Press [V] to deploy your Mastercraft Mithril Flight Wings and intercept the Sky-Wyvern in its own thermal airways.',
-      'Stealing the Sky-Wyvern Dragon Egg from the Caldera Trench nest (-18, -44) will lure the dragon down into close combat.',
+      'Board the Space Fighter or use S.W.A.T. ADS rifle to deal 80+ damage to its Wings and force it to crash-land.',
+      'Stealing a glowing Dragon Egg from the ravine nest immediately triggers OnEggStolen pursuit.',
     ],
   },
-  caldera_titan: {
-    species: 'caldera_titan',
-    name: 'Ignis-Rex, The Caldera Titan',
-    title: 'Sovereign of the Molten Summit',
-    biomeName: 'Volcanic Rift & Caldera Summit',
-    threatLevel: 5,
-    diet: 'Apex Volcanic Predator',
-    sizeLabel: '16.4m Length · 6.5m Height',
-    lore: 'The undisputed ruler of Primal Caldera. Ignis-Rex is an ancient theropod-dragon whose obsidian hide is veined with living magma. Its heart beats like a volcanic furnace—only by claiming its Titan Fang and Magma Heart can the Ancient Signal Tower be ignited.',
-    enrageTrigger: 'At < 50% HP, magma veins across its entire body flare incandescent white-orange, unleashing devastating eruption slams.',
+  brontoshell: {
+    species: 'brontoshell',
+    name: 'Armor Dinosaur · Terrestrial Juggernaut',
+    title: 'Heavy Armored Behemoth & Tamable Living Tank',
+    biomeName: 'Zone 2 · Fern Forest & Black Coast',
+    threatLevel: 4,
+    diet: 'Armored Lithovore (Tamable Mount)',
+    sizeLabel: '11.2m Length · Model 0f50cb2eb3ed4242815382371518de01',
+    lore: 'Loaded from armor_dinasour.glb (Sketchfab ID: 0f50cb2eb3ed4242815382371518de01). Features heavy alternating leg stomps with torso roll and vibrating dorsal scutes. Frontal and dorsal hits deflect off its armor with metallic sparks (0.2x damage), while flanking its unarmored Core deals 1.8x damage. Can be snared with a Trap and fed a Ration to mount!',
+    enrageTrigger: 'At < 40% HP or when agitated, scrapes Foot_R twice kicking up dust clouds and executes a 14m/s Bull Charge.',
     tells: [
       {
-        name: 'Cataclysmic Jaws Charge',
-        cue: 'Inhales embers into its molten maw, roaring as lava drips from its fangs before lunging.',
-        counter: 'Time your dodge i-frames through the initial snap, then counter-strike the Molten Maw.',
+        name: '14m/s Bull Charge',
+        cue: 'Lowers Head and Neck parallel to the ground and scrapes Foot_R twice against the dirt.',
+        counter: 'Dodge laterally, then flank its unarmored Core underbelly for 1.8x damage.',
       },
       {
-        name: 'Caldera Eruption Stomp',
-        cue: 'Raises its massive clawed foot high while its Volcanic Heart Core pulses bright gold.',
-        counter: 'Evade the ground impact, then rush directly under its chest to pierce the Volcanic Heart Core.',
+        name: 'Dorsal Armor Deflection (0.2x)',
+        cue: 'Angles its armored skull and dorsal carapace toward frontal attackers.',
+        counter: 'Deploy a Trap (3) and feed it a Ration to tame and mount its Spine_Mount_Socket!',
       },
     ],
     weaknesses: [
       {
-        part: 'Molten Maw & Crown',
-        multiplier: '1.75x Damage',
-        breakBonus: 'Drops Sovereign Titan Fang + triggers long collapse stagger',
+        part: 'Unarmored Flank & Underbelly Core',
+        multiplier: '1.80x Damage',
+        breakBonus: 'Drops Brontoshell Carapace + stuns juggernaut for 4.5s',
       },
       {
-        part: 'Volcanic Heart Core',
-        multiplier: '1.60x Damage',
-        breakBonus: 'Drops Apex Magma Heart + suppresses magma rage aura',
+        part: 'Dorsal Armor & Front Skull (Armored)',
+        multiplier: '0.20x Deflection',
+        breakBonus: 'Spawns metallic spark deflection—flank to the side instead!',
+      },
+    ],
+    drops: ['Brontoshell Carapace', 'Calcified Coral Stone', 'Dense Beast Bone'],
+    huntingTips: [
+      'Avoid hitting its front skull or dorsal shell (0.2x damage)—dodge to its flank to hit the Core for 1.8x damage.',
+      'Catch it in a Trap and press Interact / Ration to mount and ride the Armor Dinosaur as a living tank!',
+    ],
+  },
+  snapjaw: {
+    species: 'snapjaw',
+    name: 'Jason T — Apex Ravine Stalker (River Snapjaw Leviathan)',
+    title: 'High-Speed Predatory Stalker (340 / 340 HP)',
+    biomeName: 'Zone 2 · Fern Forest & Crystal River Ravine',
+    threatLevel: 3,
+    diet: 'Hyper-Carnivorous Ambush Stalker',
+    sizeLabel: '10.4m Length · Model e16a75e16de8468bbf7f39d8f8ba5daa',
+    lore: 'Loaded from jason_t.glb (Sketchfab ID: e16a75e16de8468bbf7f39d8f8ba5daa). Exhibits a low horizontal spine posture (0.25 rad), rapid digitigrade stride, and avian-stabilized head lock on prey with snapping jaw lunges. Stalks through the Fern Forest at half speed before executing a 12m horizontal Ambush Pounce.',
+    enrageTrigger: 'AtNight or < 45% HP: Stalking speed and pounce frequency increase by 35%.',
+    tells: [
+      {
+        name: '12m Ambush Pounce (vy=6, vFwd=16)',
+        cue: 'Crouches in the bending ferns and leaps horizontally with jaws wide open to pin the player.',
+        counter: 'Shoot or spear the Head weak point during its lunge to interrupt the pin and trigger a stunned stagger!',
+      },
+      {
+        name: 'Rapid Jaw Bite Lunge',
+        cue: 'Stabilized Head locks onto prey with zero vertical bobbing before snapping.',
+        counter: 'Sidestep with Demon Hunter or block with Bulky Knight Iron Bulwark.',
+      },
+    ],
+    weaknesses: [
+      {
+        part: 'Head (Interrupts Ambush Pounce)',
+        multiplier: '1.65x Damage',
+        breakBonus: 'Interrupts pounce pin + triggers long stunned stagger',
+      },
+      {
+        part: 'Core & Legs',
+        multiplier: '1.45x Damage',
+        breakBonus: 'Drops Calcified Coral Stone + slows digitigrade sprint',
+      },
+    ],
+    drops: ['Calcified Coral Stone', 'Raptor Talon', 'Dense Beast Bone'],
+    huntingTips: [
+      'Target the Head weak point while Jason T lunges to immediately interrupt its pounce and stun it.',
+      'Use Focus Vision to reveal its glowing footprint trail winding through the Fern Forest.',
+    ],
+  },
+  thunderhorn: {
+    species: 'thunderhorn',
+    name: 'Triceratops Beetle · Chitinous Horned Behemoth',
+    title: '6-Legged Horned Behemoth & Hover Charger',
+    biomeName: 'Zone 1 · Mystic Forest & Geothermal Springs',
+    threatLevel: 4,
+    diet: 'Chitinous Mineral & Spore Harvester',
+    sizeLabel: '9.8m Length · Model d9d16acc41084435b32740806c164e6d',
+    lore: 'Loaded from triceratops.glb (Sketchfab ID: d9d16acc41084435b32740806c164e6d). Moves with an authentic 6-legged insectoid tripod gait (L1,R2,L3 alternating with R1,L2,R3 every 0.25s). Pitches its massive 3-horned head down then violently upward to launch attackers, and splits its outer Elytra wing-casings 55° to buzz across chasms in hover charges.',
+    enrageTrigger: 'When agitated, Elytra_L and Elytra_R split open 55° while translucent inner wings buzz at sin(t * 45) for hover charges.',
+    tells: [
+      {
+        name: 'Three-Horned Cranial Uppercut',
+        cue: 'Pitches Head_Horn_Node down (+0.5 rad) before snapping violently upward (-0.8 rad).',
+        counter: 'Dodge sideways and strike the exposed Wing-Casings or Core.',
+      },
+      {
+        name: '55° Elytra Split Hover Charge',
+        cue: 'Hard outer shell casings split open 55° with a high-frequency wing buzz.',
+        counter: 'Fire S.W.A.T. rifle into the open translucent wings to ground the beetle.',
+      },
+    ],
+    weaknesses: [
+      {
+        part: 'Three-Horned Head Node',
+        multiplier: '1.65x Damage',
+        breakBonus: 'Drops Conductive Crest-Horn + massive knockdown',
+      },
+      {
+        part: 'Split Elytra Wing-Casings',
+        multiplier: '1.50x Damage',
+        breakBonus: 'Drops Obsidian Shard + disables hover charge',
+      },
+    ],
+    drops: ['Conductive Crest-Horn', 'Obsidian Shard', 'Dense Beast Bone'],
+    huntingTips: [
+      'Watch its 6-legged tripod gait and strike when its Elytra wing-casings split open 55°.',
+      'Place a Trap along its Mystic Forest patrol spline to expose its Three-Horned Head.',
+    ],
+  },
+  raptor: {
+    species: 'raptor',
+    name: 'Ravine Stalker Pack-Mate (Jason T Subspecies)',
+    title: 'Swift Digitigrade Ravine Predator',
+    biomeName: 'Zone 2 · Fern Forest Ravines',
+    threatLevel: 2,
+    diet: 'Carnivorous Pack Predator',
+    sizeLabel: '7.2m Length · Model e16a75e16de8468bbf7f39d8f8ba5daa',
+    lore: 'Agile juvenile subspecies of Jason T (jason_t.glb) that prowls the Fern Forest undergrowth with stabilized avian head tracking and rapid leaping bites.',
+    enrageTrigger: 'At night or < 40% HP, pack aggression and leap velocity increase by 35%.',
+    tells: [
+      {
+        name: 'Fern Ambush Leap',
+        cue: 'Lowers spine parallel to the ferns and snaps jaws.',
+        counter: 'Counter-slash with Demon Hunter Twin Slash or S.W.A.T. headshot.',
+      },
+    ],
+    weaknesses: [
+      {
+        part: 'Head & Snapping Jaw',
+        multiplier: '1.55x Damage',
+        breakBonus: 'Drops Raptor Talon + knockdown stagger',
+      },
+      {
+        part: 'Core & Tail',
+        multiplier: '1.35x Damage',
+        breakBonus: 'Drops Raptor Scale-Hide',
+      },
+    ],
+    drops: ['Raptor Talon', 'Raptor Scale-Hide', 'Dense Beast Bone'],
+    huntingTips: [
+      'Interrupt its pounce with a headshot or Demon Vault.',
+    ],
+  },
+  frostfang: {
+    species: 'frostfang',
+    name: 'Glacial Horned Behemoth (Alpine Triceratops)',
+    title: 'Cryo-Chitin Colossus of the High Crags',
+    biomeName: 'Zone 3 · High-Altitude Canyon & Snow Ridge',
+    threatLevel: 4,
+    diet: 'Alpine Permafrost Grazer',
+    sizeLabel: '11.8m Length · Model d9d16acc41084435b32740806c164e6d',
+    lore: 'High-altitude frost-adapted variant of the Horned Behemoth (triceratops.glb) whose three cranial horns are coated in glacial rime.',
+    enrageTrigger: 'At < 45% HP, splits its frost-plated Elytra casings and unleashes sub-zero hover charges.',
+    tells: [
+      {
+        name: 'Glacial Horn Uppercut',
+        cue: 'Lowers three-horned crown into the snow before heaving upward.',
+        counter: 'Evade laterally and strike its exposed flank.',
+      },
+    ],
+    weaknesses: [
+      {
+        part: 'Glacial Cranial Horns',
+        multiplier: '1.65x Damage',
+        breakBonus: 'Drops Conductive Crest-Horn Ivory + stagger',
+      },
+      {
+        part: 'Elytra Wing-Casing Core',
+        multiplier: '1.45x Damage',
+        breakBonus: 'Drops Dense Beast Bone',
+      },
+    ],
+    drops: ['Conductive Crest-Horn', 'Dense Beast Bone', 'Obsidian Shard'],
+    huntingTips: [
+      'Use the Space Fighter or Bulky Knight Earthshatter Slam to crack its frost horns.',
+    ],
+  },
+  caldera_titan: {
+    species: 'caldera_titan',
+    name: 'Ignis-Rex · Apex Volcanic Armor Titan',
+    title: 'Sovereign Juggernaut of the Molten Caldera',
+    biomeName: 'Zone 3 · Volcanic Caldera Summit',
+    threatLevel: 5,
+    diet: 'Apex Volcanic Juggernaut',
+    sizeLabel: '15.4m Length · Model 0f50cb2eb3ed4242815382371518de01',
+    lore: 'Colossal magma-infused apex variant of the Armor Dinosaur (armor_dinasour.glb) ruling the northern caldera. Frontal hits ricochet off its obsidian dorsal plates (0.2x), requiring hunters to flank its molten Core (1.8x).',
+    enrageTrigger: 'At < 50% HP, magma veins flare orange-white and it chains 14m/s Bull Charges.',
+    tells: [
+      {
+        name: 'Cataclysmic Bull Charge',
+        cue: 'Scrapes right foot twice in volcanic ash and charges at 14m/s.',
+        counter: 'Shadow Dash or Tactical Dive aside and strike its unarmored Core.',
+      },
+    ],
+    weaknesses: [
+      {
+        part: 'Volcanic Heart Core (Flank)',
+        multiplier: '1.80x Damage',
+        breakBonus: 'Drops Sovereign Titan Fang & Apex Magma Heart',
+      },
+      {
+        part: 'Obsidian Dorsal Armor (Armored)',
+        multiplier: '0.20x Deflection',
+        breakBonus: 'Deflects frontal blows with sparks—flank to the side!',
       },
     ],
     drops: ['Sovereign Titan Fang', 'Apex Magma Heart', 'Obsidian Shard'],
     huntingTips: [
-      'Forge the Thunderhorn Siege Lance and Thunder-Warden Aegis at the Campfire before ascending the Caldera.',
-      'Save your Sinew Snare Traps for when Ignis-Rex enters its Enraged phase below 50% HP.',
+      'Flank around its armored skull to hit the Volcanic Heart Core for 1.8x damage.',
     ],
   },
 };

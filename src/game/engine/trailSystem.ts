@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import type { BeastSpecies } from '../../types/game.ts';
+import { createSculptedOrganicGeometry } from './assetLoaderAndRigging.ts';
 
 export interface DynamicFootprint {
   id: string;
@@ -54,6 +55,18 @@ export class TrailSystem {
   }
 
   private initFootprints() {
+    const toeGeo = createSculptedOrganicGeometry(
+      [
+        [0.0, 0.05, 0.05],
+        [0.5, 0.035, 0.035],
+        [1.0, 0.005, 0.005],
+      ],
+      6,
+      0.22,
+      0
+    );
+    toeGeo.rotateX(Math.PI / 2);
+
     // Pre-allocate 45 footprint decal groups
     for (let i = 0; i < 45; i++) {
       const group = new THREE.Group();
@@ -88,8 +101,6 @@ export class TrailSystem {
 
       // Three toe claw marks for predator print
       for (let c = -1; c <= 1; c++) {
-        const toeGeo = new THREE.ConeGeometry(0.05, 0.22, 4);
-        toeGeo.rotateX(-Math.PI / 2);
         const toeMesh = new THREE.Mesh(toeGeo, printMat);
         toeMesh.position.set(c * 0.12, 0.008, 0.26);
         toeMesh.rotation.y = c * 0.2;
@@ -103,7 +114,16 @@ export class TrailSystem {
 
   private initScentParticles() {
     // Pre-allocate 75 rising scent motes
-    const moteGeo = new THREE.DodecahedronGeometry(0.09);
+    const moteGeo = createSculptedOrganicGeometry(
+      [
+        [0.0, 0.02, 0.02],
+        [0.5, 0.09, 0.09],
+        [1.0, 0.02, 0.02],
+      ],
+      8,
+      0.16,
+      -0.08
+    );
     for (let i = 0; i < 75; i++) {
       const mat = new THREE.MeshBasicMaterial({
         color: 0xfbbf24,

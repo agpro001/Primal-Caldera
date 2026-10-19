@@ -21,6 +21,9 @@ import type {
   CreatureEggNest,
   AtmosphericScienceState,
   AdventureMission,
+  PlayableCharacterId,
+  StrikeGestureType,
+  DayNightState,
 } from '../../types/game.ts';
 import {
   WEAPON_REGISTRY,
@@ -28,6 +31,7 @@ import {
   QUEST_CHAIN,
   INITIAL_EGG_NESTS,
   ADVENTURE_MISSIONS,
+  PLAYABLE_CHARACTER_PROFILES,
   calculateDamage,
   calculatePlayerDamageTaken,
   isDodgeInvulnerable,
@@ -36,25 +40,29 @@ import {
   computeCameraRelativeMovement,
   computeAtmosphericPhysics,
   computeSurvivalMetabolism,
+  computeDayNightCycle,
   stepAngleShortestArc,
 } from '../logic/rules.ts';
 import { MaterialCache } from '../graphics/materials.ts';
 import {
   buildHunterModel,
   buildBeastModel,
+  buildSpaceFighterModel,
   buildTribalNPCModel,
   buildEggNestModel,
-  HunterRig,
-  BeastRig,
-} from '../graphics/proceduralModels.ts';
+  createSculptedOrganicGeometry,
+  type HunterRig,
+  type BeastRig,
+  type SpaceFighterRig,
+} from './assetLoaderAndRigging.ts';
 import {
   createTerrain,
   createInitialTrackClues,
   getTerrainBiome,
-  TerrainSystem,
+  type TerrainSystem,
 } from '../graphics/terrain.ts';
 import { sound } from '../audio/soundEngine.ts';
-import { WeatherSystem, WEATHER_CONDITIONS } from './weatherSystem.ts';
+import { WeatherSystem } from './weatherSystem.ts';
 import { TrailSystem } from './trailSystem.ts';
 
 export interface EngineCallbacks {
@@ -73,6 +81,7 @@ export interface EngineCallbacks {
   onAtmosphereChange?: (atmo: AtmosphericScienceState) => void;
   onAdventuresChange?: (missions: AdventureMission[], activeIndex: number) => void;
   onHitMarker?: (damage: number, isCrit: boolean, isWeakPoint: boolean) => void;
+  onDayNightChange?: (dayNight: DayNightState) => void;
 }
 
 interface ActiveBeastActor {
@@ -84,6 +93,8 @@ interface ActiveBeastActor {
   chargeDirX: number;
   chargeDirZ: number;
   hitThisSwing: boolean;
+  wingDamageAccumulated: number;
+  footprintTimer: number;
 }
 
 interface ActiveNPCActor {
@@ -91,13 +102,15 @@ interface ActiveNPCActor {
   mesh: THREE.Group;
 }
 
-interface LureStoneProjectile {
+interface ActiveProjectile {
   mesh: THREE.Mesh;
   vx: number;
   vy: number;
   vz: number;
   age: number;
   landed: boolean;
+  kind: 'lure_stone' | 'rifle_bullet' | 'plasma_bolt' | 'brass_casing';
+  damage: number;
 }
 
 interface PlacedTrap {
@@ -116,6 +129,15 @@ interface ParticleBurst {
   maxLife: number;
 }
 
+interface CompanionHeroSlot {
+  id: PlayableCharacterId;
+  rig: HunterRig;
+  pos: THREE.Vector3;
+  rotation: number;
+  gaitPhase: number;
+  aiAngle: number;
+}
+
 export class GameEngine {
   private container: HTMLElement;
   private callbacks: EngineCallbacks;
@@ -125,6 +147,30 @@ export class GameEngine {
   private materialCache: MaterialCache;
   private terrain: TerrainSystem;
   private hunter: HunterRig;
+  private heroRoster = new Map<PlayableCharacterId, CompanionHeroSlot>();
+  public activeCharacterId: PlayableCharacterId = 'demon_hunter';
+
+  // Playable Space Fighter & Tamable Armor Dinosaur Mount
+  private spaceFighter!: SpaceFighterRig;
+  private spaceFighterPadPos = new THREE.Vector3(10.5, 0, 26.2);
+  private spaceFighterPos = new THREE.Vector3(10.5, 0, 26.2);
+  private spaceFighterRotY = Math.PI;
+  private spaceFighterRoll = 0;
+  private spaceFighterPitch = 0;
+  public isPilotingSpaceFighter = false;
+  public mountedBeastActor: ActiveBeastActor | null = null;
+
+  // GTA V Sky-Camera Transition State
+  private gtaSkyCamTimer = 0;
+  private gtaSkyCamDuration = 0.65;
+  private gtaSkyCamFrom = new THREE.Vector3();
+  private gtaSkyCamTo = new THREE.Vector3();
+
+  // Day-Night Cycle State
+  public timeOfDayHours = 10.5;
+  public dayNightState: DayNightState = computeDayNightCycle(10.5);
+  private scratchTargetVec = new THREE.Vector3();
+
   private weatherSystem: WeatherSystem;
   private trailSystem: TrailSystem;
 
@@ -168,6 +214,12 @@ export class GameEngine {
   private gaitPhase = 0;
   private turnLeanAngle = 0;
   private upperBodyActionTimer = 0;
+  private muzzleFlashTimer = 0;
+  private recoilImpulse = 0;
+  private activeGesture: StrikeGestureType = 'tap';
+  private shockwaveRingMesh!: THREE.Mesh;
+  private shockwaveTimer = 0;
+
   public currentAtmosphere: AtmosphericScienceState;
   public adventureMissions: AdventureMission[] = ADVENTURE_MISSIONS.map((m) => ({
     ...m,
@@ -197,7 +249,7 @@ export class GameEngine {
   public eggNests: { data: CreatureEggNest; mesh: THREE.Group }[] = [];
   private clues: { data: TrackClue; mesh: THREE.Group }[] = [];
   private traps: PlacedTrap[] = [];
-  private projectiles: LureStoneProjectile[] = [];
+  private projectiles: ActiveProjectile[] = [];
   private particles: ParticleBurst[] = [];
   private particlePoolGroup = new THREE.Group();
   private airStreamGroup = new THREE.Group();
@@ -233,6 +285,11 @@ export class GameEngine {
       maxWaterCanteens: saveData.playerStats.maxWaterCanteens ?? 6,
       eggsCollected: saveData.playerStats.eggsCollected ?? 0,
       eggInventory: { ...(saveData.playerStats.eggInventory ?? {}) },
+      activeCharacter: 'demon_hunter',
+      isPilotingSpaceFighter: false,
+      isMountedOnBeast: false,
+      timeOfDayHours: 10.5,
+      isNight: false,
       isFlying: false,
       isJumping: false,
       altitude: 1.8,
@@ -289,8 +346,8 @@ export class GameEngine {
 
     // Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1a1820);
-    this.scene.fog = new THREE.FogExp2(0x282024, 0.0085);
+    this.scene.background = new THREE.Color(0x1a2636);
+    this.scene.fog = new THREE.FogExp2(0x243242, 0.0082);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(
@@ -327,7 +384,7 @@ export class GameEngine {
     this.focusLight = new THREE.PointLight(0xf59e0b, 0, 16);
     this.scene.add(this.focusLight);
 
-    // Materials & Terrain (including 3D Ocean, Winding River, Cold Snow Mountains, Instanced Grass, Trees, Stones, Shrubs)
+    // Materials & Terrain
     this.materialCache = new MaterialCache();
     this.terrain = createTerrain(this.materialCache);
     this.scene.add(this.terrain.mesh);
@@ -344,35 +401,61 @@ export class GameEngine {
     this.scene.add(this.weatherSystem.weatherParticleGroup);
     this.scene.add(this.trailSystem.trailGroup);
 
-    // Hunter Model (Articulated 18-Joint Mastercraft Mithril Armor Knight)
-    this.hunter = buildHunterModel(this.materialCache);
-    this.hunter.updateWeapon(this.equippedWeapon);
-    this.hunter.updateArmor(this.equippedArmor);
-
+    // Spawn Playable Roster (GTA V Instant Character Swap: Demon Hunter, S.W.A.T. Operator, Bulky Knight)
     let spawnX = saveData.playerPos.x;
     let spawnZ = saveData.playerPos.z;
-    // Prevent spawning inside the Campfire Ring at (0, 28)
     if (Math.hypot(spawnX - 0, spawnZ - 28) < 2.2) {
       spawnX = 0;
       spawnZ = 31.8;
     }
     this.playerPos.set(spawnX, this.terrain.getHeight(spawnX, spawnZ), spawnZ);
-    this.hunter.root.position.copy(this.playerPos);
-    this.hunter.root.rotation.y = this.playerRotation;
-    this.scene.add(this.hunter.root);
 
-    // Initialize Diegetic 3D World Rings (Player Tactical Turf Ring + Beast Threat Ring)
+    const rosterCoords: Record<PlayableCharacterId, { x: number; z: number; rot: number }> = {
+      demon_hunter: { x: spawnX, z: spawnZ, rot: Math.PI },
+      swat_operator: { x: -4.2, z: 29.8, rot: 2.8 },
+      bulky_knight: { x: 4.2, z: 29.5, rot: -2.8 },
+    };
+
+    (['demon_hunter', 'swat_operator', 'bulky_knight'] as PlayableCharacterId[]).forEach((charId, idx) => {
+      const rig = buildHunterModel(this.materialCache, this.equippedArmor, charId);
+      rig.updateWeapon(this.equippedWeapon);
+      rig.updateArmor(this.equippedArmor);
+      const c = rosterCoords[charId];
+      const cy = this.terrain.getHeight(c.x, c.z);
+      const pos = new THREE.Vector3(c.x, cy, c.z);
+      rig.root.position.copy(pos);
+      rig.root.rotation.y = c.rot;
+      this.scene.add(rig.root);
+      this.heroRoster.set(charId, {
+        id: charId,
+        rig,
+        pos,
+        rotation: c.rot,
+        gaitPhase: idx * 1.4,
+        aiAngle: idx * 2.1,
+      });
+    });
+
+    this.hunter = this.heroRoster.get('demon_hunter')!.rig;
+
+    // Initialize Playable 6-DOF Space Fighter on Base Camp Stone Landing Pad
+    this.initSpaceFighter();
+
+    // Initialize Diegetic 3D World Rings (Player Tactical Turf Ring + Beast Threat Ring + Shockwave)
     this.initDiegeticWorldUI();
 
     // Initialize Tribal Characters (NPCs)
     this.initNPCs();
 
-    // Initialize All 7 Prehistoric & Draconic Beasts (including Flying Dragons!) + 7 Creature Egg Nests
+    // Initialize All 7 Prehistoric & Draconic Beasts + 7 Creature Egg Nests
     this.initBeasts();
     this.initEggNestsAndAirStreams();
 
     // Pre-allocate particle geometries
     this.initParticles();
+
+    // Seed initial beast footprints so Focus Vision [F] shows tracking trails immediately
+    this.seedInitialFootprintTrails();
 
     // Pre-warm renderer
     this.renderer.compile(this.scene, this.camera);
@@ -385,6 +468,12 @@ export class GameEngine {
     (window as any).__gameTest = {
       getState: () => ({
         gameState: this.gameState,
+        activeCharacter: this.activeCharacterId,
+        isPilotingSpaceFighter: this.isPilotingSpaceFighter,
+        isMountedOnBeast: Boolean(this.mountedBeastActor),
+        dayNight: this.dayNightState,
+        focusVisionActive: this.focusVisionActive,
+        footprintCount: this.trailSystem.dynamicFootprints.length,
         playerPos: { x: this.playerPos.x, y: this.playerPos.y, z: this.playerPos.z },
         playerRotation: this.playerRotation,
         isFlying: this.isFlying,
@@ -408,27 +497,20 @@ export class GameEngine {
           y: b.state.y,
           z: b.state.z,
           hp: b.state.hp,
+          aiState: b.state.aiState,
           isFlyingBeast: b.state.isFlyingBeast,
-        })),
-        eggNests: this.eggNests.map((n) => ({
-          id: n.data.id,
-          species: n.data.species,
-          x: n.data.x,
-          z: n.data.z,
-          collected: n.data.collected,
-        })),
-        npcs: this.npcs.map((n) => ({
-          id: n.data.id,
-          name: n.data.name,
-          x: n.data.x,
-          z: n.data.z,
         })),
       }),
       setVirtualMove: (x: number, y: number) => {
         this.virtualMoveX = x;
         this.virtualMoveY = y;
       },
+      switchCharacter: (charId: PlayableCharacterId) => this.switchCharacter(charId),
+      advanceTimeOfDay: (hours = 6) => this.advanceTimeOfDay(hours),
+      toggleFocus: () => this.toggleHunterFocus(),
       toggleFlight: () => this.toggleFlightMode(),
+      toggleSpaceFighter: () => this.toggleSpaceFighterBoarding(),
+      strike: (gesture: StrikeGestureType = 'tap') => this.performStrike(gesture),
       jump: () => this.jumpPlayer(),
       teleport: (x: number, z: number, yaw = 0) => {
         this.playerPos.set(x, this.terrain.getHeight(x, z), z);
@@ -445,8 +527,47 @@ export class GameEngine {
     this.animFrameId = requestAnimationFrame(this.tick);
   }
 
+  private initSpaceFighter() {
+    const padY = this.terrain.getHeight(this.spaceFighterPadPos.x, this.spaceFighterPadPos.z);
+    this.spaceFighterPadPos.y = padY;
+    this.spaceFighterPos.set(this.spaceFighterPadPos.x, padY + 0.25, this.spaceFighterPadPos.z);
+
+    // Stone Landing Pad Apron
+    const padGeo = createSculptedOrganicGeometry(
+      [
+        [0.0, 3.8, 3.8],
+        [0.8, 3.5, 3.5],
+        [1.0, 3.3, 3.3],
+      ],
+      24,
+      0.24,
+      0
+    );
+    const padMesh = new THREE.Mesh(padGeo, this.materialCache.stoneMaterial);
+    padMesh.position.copy(this.spaceFighterPadPos);
+    padMesh.receiveShadow = true;
+    this.scene.add(padMesh);
+
+    const padRing = new THREE.Mesh(
+      new THREE.RingGeometry(2.85, 3.05, 32).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.55,
+      })
+    );
+    padRing.position.set(this.spaceFighterPadPos.x, padY + 0.26, this.spaceFighterPadPos.z);
+    this.scene.add(padRing);
+
+    this.spaceFighter = buildSpaceFighterModel(this.materialCache);
+    this.spaceFighter.root.position.copy(this.spaceFighterPos);
+    this.spaceFighter.root.rotation.y = this.spaceFighterRotY;
+    this.scene.add(this.spaceFighter.root);
+  }
+
   private initDiegeticWorldUI() {
-    // 1. Diegetic 3D Turf Ring beneath Player (FC Mobile / Monster Hunter style)
+    // 1. Diegetic 3D Turf Ring beneath Player
     const turfRingGeo = new THREE.RingGeometry(0.86, 0.96, 36);
     turfRingGeo.rotateX(-Math.PI / 2);
     const turfRingMat = new THREE.MeshBasicMaterial({
@@ -459,8 +580,17 @@ export class GameEngine {
     const turfRing = new THREE.Mesh(turfRingGeo, turfRingMat);
     this.playerDiegeticGroup.add(turfRing);
 
-    // 3D Directional Threat / Waypoint Arrow on the Player's Turf Ring
-    const arrowGeo = new THREE.ConeGeometry(0.18, 0.42, 4);
+    // 3D Directional Threat / Waypoint Arrow on the Player's Turf Ring (Sculpted - Zero Primitives)
+    const arrowGeo = createSculptedOrganicGeometry(
+      [
+        [0.0, 0.18, 0.08],
+        [0.5, 0.11, 0.05],
+        [1.0, 0.005, 0.005],
+      ],
+      6,
+      0.42,
+      0
+    );
     arrowGeo.rotateX(Math.PI / 2);
     arrowGeo.translate(0, 0.02, 1.18);
     const arrowMat = new THREE.MeshBasicMaterial({
@@ -473,7 +603,7 @@ export class GameEngine {
     this.playerDiegeticGroup.add(this.playerDirectionArrow);
     this.scene.add(this.playerDiegeticGroup);
 
-    // 2. Diegetic 3D Beast Lock-On / Telegraph Ring on the ground beneath targeted Beast
+    // 2. Diegetic 3D Beast Lock-On / Telegraph Ring
     const threatGeo = new THREE.RingGeometry(2.2, 2.48, 40);
     threatGeo.rotateX(-Math.PI / 2);
     const threatMat = new THREE.MeshBasicMaterial({
@@ -486,6 +616,20 @@ export class GameEngine {
     this.beastThreatRing = new THREE.Mesh(threatGeo, threatMat);
     this.beastThreatRing.visible = false;
     this.scene.add(this.beastThreatRing);
+
+    // 3. Bulky Knight Earthshatter Slam Shockwave Ring
+    const shockGeo = new THREE.RingGeometry(0.8, 1.25, 36);
+    shockGeo.rotateX(-Math.PI / 2);
+    const shockMat = new THREE.MeshBasicMaterial({
+      color: 0xf59e0b,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.shockwaveRingMesh = new THREE.Mesh(shockGeo, shockMat);
+    this.shockwaveRingMesh.visible = false;
+    this.scene.add(this.shockwaveRingMesh);
   }
 
   private initNPCs() {
@@ -500,7 +644,7 @@ export class GameEngine {
         rotation: 0.45,
         biome: 'jungle',
         greeting:
-          'Chief Kael: "Hail, Mithril Vanguard! Press [V] to deploy your Flight Wings, raid the Dragon Egg nests, and watch your Food & Water homeostasis!"',
+          'Chief Kael: "Swap between Demon Hunter [1], S.W.A.T. Operator [2], and Bulky Knight [3]! Board the Space Fighter [E] or activate Focus Vision [F] to follow glowing beast footprints!"',
         giftMaterial: { id: 'beast_bone', count: 3, claimed: false },
       },
       {
@@ -513,7 +657,7 @@ export class GameEngine {
         rotation: -0.5,
         biome: 'jungle',
         greeting:
-          'Torak: "Your Mastercraft Mithril panoply gleams like Beyond Skyrim steel! Bring me Dragon Scales or Frostfang Ivory to temper your glaive!"',
+          'Torak: "Beware nightfall! Beasts grow +35% more aggressive in the dark, but Luminous Night-Spores bloom across the Mystic Forest!"',
         giftMaterial: { id: 'obsidian_shard', count: 2, claimed: false },
       },
       {
@@ -526,7 +670,7 @@ export class GameEngine {
         rotation: 2.6,
         biome: 'river',
         greeting:
-          'Scout Lyra: "Drink from the Crystal River [H] to refill your canteen! Overhead, Aurelius the Sky-Dragon circles the thermal updrafts guarding its Dragon Egg!"',
+          'Scout Lyra: "Jason T stalks the Fern Forest ahead! Shoot its Head during a lunge to stun it, or snare an Armor Dinosaur in a Trap [R] to mount and ride it!"',
         giftMaterial: { id: 'sun_herb', count: 3, claimed: false },
       },
     ];
@@ -557,8 +701,8 @@ export class GameEngine {
       {
         id: 'raptor_alpha',
         species: 'raptor',
-        name: 'Razor-Crest Raptor Alpha',
-        title: 'Pack Terror of the Ravines',
+        name: 'Ravine Stalker Alpha (Jason T Pack)',
+        title: 'Swift Digitigrade Predator',
         x: -24,
         z: 42,
         hp: 240,
@@ -567,8 +711,8 @@ export class GameEngine {
       {
         id: 'snapjaw_leviathan',
         species: 'snapjaw',
-        name: 'River Snapjaw Leviathan',
-        title: 'Amphibious Predator of River & Ocean',
+        name: 'Jason T — River Snapjaw Leviathan',
+        title: 'Apex Ravine Stalker of the Fern Forest',
         x: -9,
         z: 15.5,
         hp: 340,
@@ -577,8 +721,8 @@ export class GameEngine {
       {
         id: 'bronto_behemoth',
         species: 'brontoshell',
-        name: 'Gilded Brontoshell Behemoth',
-        title: 'Ancient Carapace of the Black Coast',
+        name: 'Armor Dinosaur Juggernaut',
+        title: 'Tamable Heavy Carapace Tank',
         x: 42,
         z: 38,
         hp: 380,
@@ -587,7 +731,7 @@ export class GameEngine {
       {
         id: 'frostfang_mammoth',
         species: 'frostfang',
-        name: 'Frostfang Glacial Mammoth',
+        name: 'Glacial Horned Behemoth',
         title: 'Colossus of the Cold Snow Mountains',
         x: 58,
         z: -18,
@@ -597,8 +741,8 @@ export class GameEngine {
       {
         id: 'thunderhorn_prime',
         species: 'thunderhorn',
-        name: 'Thunderhorn Ceratopsian Prime',
-        title: 'Warden of the Geothermal Springs',
+        name: 'Triceratops Beetle Prime',
+        title: 'Chitinous 6-Legged Horned Behemoth',
         x: -44,
         z: -16,
         hp: 460,
@@ -607,8 +751,8 @@ export class GameEngine {
       {
         id: 'sky_dragon_aurelius',
         species: 'sky_dragon',
-        name: 'Aurelius, Aetherial Sky-Wyvern',
-        title: 'Flying Dragon of the Thermal Airways',
+        name: 'Dragon Character 3D · Aurelius',
+        title: 'Apex Guardian of OP-01 Wyvern Trench',
         x: 0,
         z: 8,
         hp: 560,
@@ -631,7 +775,7 @@ export class GameEngine {
       {
         id: 'caldera_titan_boss',
         species: 'caldera_titan',
-        name: 'Ignis-Rex, The Caldera Titan',
+        name: 'Ignis-Rex, Volcanic Armor Titan',
         title: 'Sovereign of the Molten Summit',
         x: 0,
         z: -62,
@@ -648,16 +792,6 @@ export class GameEngine {
       this.scene.add(rig.root);
 
       const weakPoints = createBeastWeakPoints(cfg.species);
-      weakPoints.forEach((wp) => {
-        const indicator = new THREE.Mesh(
-          new THREE.SphereGeometry(wp.radius * 0.45, 10, 10),
-          this.materialCache.weakPointGlow
-        );
-        indicator.position.set(wp.localOffset.x, wp.localOffset.y, wp.localOffset.z);
-        indicator.visible = false;
-        rig.root.add(indicator);
-        rig.weakPointIndicators.set(wp.id, indicator);
-      });
 
       const state: BeastState = {
         id: cfg.id,
@@ -692,18 +826,18 @@ export class GameEngine {
         chargeDirX: 0,
         chargeDirZ: 1,
         hitThisSwing: false,
+        wingDamageAccumulated: 0,
+        footprintTimer: Math.random() * 0.4,
       });
     });
 
-    // Track Clues
+    // Track Clues (Sculpted Rings - Zero Primitives)
     const initialClues = createInitialTrackClues();
+    const clueRingGeo = new THREE.RingGeometry(0.48, 0.68, 20);
+    clueRingGeo.rotateX(-Math.PI / 2);
     initialClues.forEach((clue) => {
       const group = new THREE.Group();
-      const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(0.65, 0.08, 8, 16),
-        this.materialCache.focusClueGlow
-      );
-      ring.rotation.x = Math.PI / 2;
+      const ring = new THREE.Mesh(clueRingGeo, this.materialCache.focusClueGlow);
       ring.position.y = 0.15;
       group.add(ring);
       group.position.set(clue.x, clue.y, clue.z);
@@ -712,8 +846,18 @@ export class GameEngine {
     });
   }
 
+  private seedInitialFootprintTrails() {
+    // Seed a trail of 16 footprints leading from near Base Camp (0, 26) toward Jason T (-9, 15.5) and Raptor (-24, 42)
+    for (let i = 0; i < 16; i++) {
+      const t = i / 15;
+      const fx = THREE.MathUtils.lerp(-1.5, -9.0, t) + Math.sin(i * 1.2) * 0.4;
+      const fz = THREE.MathUtils.lerp(27.0, 16.0, t);
+      const fy = this.terrain.getHeight(fx, fz);
+      this.trailSystem.addFootprint(fx, fy, fz, Math.atan2(-7.5, -11.0), 'snapjaw');
+    }
+  }
+
   private initEggNestsAndAirStreams() {
-    // 1. Spawn 7 3D Creature & Dragon Egg Nests across all biomes
     INITIAL_EGG_NESTS.forEach((nestCfg) => {
       const copy: CreatureEggNest = { ...nestCfg };
       copy.y = this.terrain.getHeight(copy.x, copy.z);
@@ -723,12 +867,12 @@ export class GameEngine {
       this.eggNests.push({ data: copy, mesh: nestMesh });
     });
 
-    // 2. Spawn 3D Thermal Updraft Columns & Wind Streamlines (Atmospheric Physics Visualization)
+    // 3D Thermal Updraft Columns (>14m altitude lift)
     const thermalSpots = [
-      { x: -16, z: -38, radius: 7.5 }, // Caldera Dragon Trench Thermal
-      { x: -42, z: -14, radius: 6.5 }, // Geothermal Springs Updraft
-      { x: 48, z: -12, radius: 7.0 },  // Cold Snow Mountain Ridge Lift
-      { x: 0, z: 12, radius: 6.0 },    // Central Tower Valley Thermal
+      { x: -16, z: -38, radius: 7.5 },
+      { x: -42, z: -14, radius: 6.5 },
+      { x: 48, z: -12, radius: 7.0 },
+      { x: 0, z: 12, radius: 6.0 },
     ];
     const ringMat = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
@@ -739,7 +883,7 @@ export class GameEngine {
     for (const spot of thermalSpots) {
       const gy = this.terrain.getHeight(spot.x, spot.z);
       const ringMesh = new THREE.Mesh(
-        new THREE.TorusGeometry(spot.radius * 0.65, 0.12, 8, 24),
+        new THREE.RingGeometry(spot.radius * 0.52, spot.radius * 0.68, 28),
         ringMat
       );
       ringMesh.rotation.x = Math.PI / 2;
@@ -748,8 +892,18 @@ export class GameEngine {
       this.thermalColumns.push({ ...spot, ringMesh });
     }
 
-    // 3D Wind Streamline Ribbons floating in the air
-    const ribbonGeo = new THREE.BoxGeometry(2.8, 0.05, 0.08);
+    // 3D Wind Streamline Ribbons (Sculpted - Zero Primitives)
+    const ribbonGeo = createSculptedOrganicGeometry(
+      [
+        [0.0, 0.02, 0.04],
+        [0.5, 0.04, 0.08],
+        [1.0, 0.02, 0.04],
+      ],
+      6,
+      2.8,
+      -1.4
+    );
+    ribbonGeo.rotateZ(Math.PI / 2);
     const ribbonMat = new THREE.MeshBasicMaterial({
       color: 0xe0f2fe,
       transparent: true,
@@ -767,8 +921,17 @@ export class GameEngine {
   }
 
   private initParticles() {
-    const geo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
-    for (let i = 0; i < 40; i++) {
+    const geo = createSculptedOrganicGeometry(
+      [
+        [0.0, 0.03, 0.03],
+        [0.5, 0.14, 0.14],
+        [1.0, 0.03, 0.03],
+      ],
+      6,
+      0.22,
+      -0.11
+    );
+    for (let i = 0; i < 48; i++) {
       const mat = new THREE.MeshBasicMaterial({ color: 0xf97316 });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.visible = false;
@@ -807,17 +970,31 @@ export class GameEngine {
   private bindEvents() {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', this.onWindowBlur);
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
     window.addEventListener('pointermove', this.onPointerMove);
     window.addEventListener('pointerup', this.onPointerUp);
     this.renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
+  private onWindowBlur = () => {
+    this.keysPressed.clear();
+    this.isPointerDown = false;
+  };
+
   private onKeyDown = (e: KeyboardEvent) => {
     this.keysPressed.add(e.code);
     if (this.gameState !== 'playing') return;
 
-    if (e.code === 'Space') {
+    if (e.code === 'Digit1') {
+      this.switchCharacter('demon_hunter');
+    } else if (e.code === 'Digit2') {
+      this.switchCharacter('swat_operator');
+    } else if (e.code === 'Digit3') {
+      this.switchCharacter('bulky_knight');
+    } else if (e.code === 'KeyN') {
+      this.advanceTimeOfDay(6);
+    } else if (e.code === 'Space') {
       e.preventDefault();
       this.jumpPlayer();
     } else if (e.code === 'KeyV') {
@@ -829,14 +1006,12 @@ export class GameEngine {
       this.toggleHunterFocus();
     } else if (e.code === 'KeyQ') {
       this.eatFoodRation();
-    } else if (e.code === 'KeyH') {
+    } else if (e.code === 'KeyC' || e.code === 'KeyH') {
       this.drinkWaterCanteen();
     } else if (e.code === 'KeyG') {
       this.useCollectedEgg();
-    } else if (e.code === 'KeyT') {
+    } else if (e.code === 'KeyT' || e.code === 'KeyR') {
       this.placeTrap();
-    } else if (e.code === 'KeyR') {
-      this.throwStone();
     } else if (e.code === 'KeyE') {
       this.handleInteract();
     }
@@ -853,7 +1028,7 @@ export class GameEngine {
       this.isPointerDown = true;
       this.lastPointerX = e.clientX;
       this.lastPointerY = e.clientY;
-      this.startSpearAttack();
+      this.performStrike('tap');
     } else if (e.button === 2) {
       this.isChargingHeavy = true;
       this.heavyChargeTime = 0;
@@ -880,11 +1055,288 @@ export class GameEngine {
     }
   };
 
+  /**
+   * GTA V Instant Character-Wheel Swap System:
+   * Triggers a sky-camera zoom transition (camera.position.y += 45 over 0.4s, panning to target character,
+   * then zooming back down to third-person follow camera). Uncontrolled characters run autonomous AI.
+   */
+  public switchCharacter(targetId: PlayableCharacterId) {
+    if (this.activeCharacterId === targetId || this.isPilotingSpaceFighter) return;
+    const currentSlot = this.heroRoster.get(this.activeCharacterId);
+    const nextSlot = this.heroRoster.get(targetId);
+    if (!currentSlot || !nextSlot) return;
+
+    // Save current hero position into its companion slot
+    currentSlot.pos.copy(this.playerPos);
+    currentSlot.rotation = this.playerRotation;
+
+    this.gtaSkyCamFrom.copy(this.playerPos);
+    this.gtaSkyCamTo.copy(nextSlot.pos);
+    this.gtaSkyCamTimer = this.gtaSkyCamDuration;
+
+    this.activeCharacterId = targetId;
+    this.hunter = nextSlot.rig;
+    this.playerPos.copy(nextSlot.pos);
+    this.playerRotation = nextSlot.rotation;
+    this.isFlying = false;
+
+    const profile = PLAYABLE_CHARACTER_PROFILES[targetId];
+    this.playerStats.activeCharacter = targetId;
+    this.playerStats.defense = ARMOR_REGISTRY[this.equippedArmor].defense + profile.defenseBonus;
+
+    sound.playFocusPulse();
+    this.spawnParticles(this.playerPos.x, this.playerPos.y + 1.2, this.playerPos.z, 0x38bdf8, 14);
+    this.callbacks.onNotification(
+      `GTA Sky-Cam Swap → ${profile.name} (${profile.role})`,
+      'info'
+    );
+    this.callbacks.onStatsChange(this.playerStats);
+  }
+
+  /**
+   * Advances the Day-Night Cycle by `deltaHours` so players can experience
+   * daytime Sun-Herb gathering vs nocturnal beast aggression & Luminous Night-Spores.
+   */
+  public advanceTimeOfDay(deltaHours = 6) {
+    this.timeOfDayHours = (this.timeOfDayHours + deltaHours) % 24;
+    this.dayNightState = computeDayNightCycle(this.timeOfDayHours);
+    this.playerStats.timeOfDayHours = this.dayNightState.timeOfDayHours;
+    this.playerStats.isNight = this.dayNightState.isNight;
+    this.callbacks.onDayNightChange?.(this.dayNightState);
+    this.callbacks.onNotification(
+      `Time of Day: ${Math.floor(this.dayNightState.timeOfDayHours)}:00 (${this.dayNightState.phase.toUpperCase()}) · ${
+        this.dayNightState.isNight
+          ? '🌙 Night Aggression +35% · Luminous Night-Spores Active!'
+          : '☀ Daylight Illumination · Sun-Herbs Active!'
+      }`,
+      this.dayNightState.isNight ? 'danger' : 'info'
+    );
+    this.callbacks.onStatsChange(this.playerStats);
+  }
+
+  /**
+   * Unified Multi-Gesture Strike Handler (Tap / Swipe Up / Swipe Down)
+   */
+  public performStrike(gesture: StrikeGestureType = 'tap') {
+    if (this.isPilotingSpaceFighter) {
+      this.fireSpaceFighterPlasma();
+      return;
+    }
+
+    if (this.mountedBeastActor) {
+      // Mounted Armor Dinosaur Bull Charge & Stomp
+      this.isAttacking = true;
+      this.attackTimer = 0.42;
+      this.beasts.forEach((b) => (b.hitThisSwing = false));
+      this.cameraShakeIntensity = 0.28;
+      sound.playBeastRoar('brontoshell');
+      this.evaluateSpearHits(4.8, 1.9);
+      return;
+    }
+
+    this.activeGesture = gesture;
+
+    if (this.activeCharacterId === 'demon_hunter') {
+      if (gesture === 'swipe_up') {
+        // Demon Vault & Double-Jump Spectral Wing Glide
+        this.isGrounded = false;
+        this.playerVelY = 11.5;
+        this.isFlying = true;
+        this.playerStats.isFlying = true;
+        this.isAttacking = true;
+        this.attackTimer = 0.45;
+        this.spawnParticles(this.playerPos.x, this.playerPos.y + 1, this.playerPos.z, 0xa855f7, 16);
+        sound.playSpearSwing(true);
+        this.evaluateSpearHits(4.2, 1.6);
+        this.callbacks.onNotification('Demon Vault! 360° Aerial Spin & Spectral Wings Deployed!', 'info');
+        this.callbacks.onStatsChange(this.playerStats);
+        return;
+      } else if (gesture === 'swipe_down') {
+        // Shadow Dash: 8m forward crouch dash with purple afterimage & i-frames
+        this.isDodging = true;
+        this.dodgeTimer = 0.38;
+        this.dodgeDirX = Math.sin(this.playerRotation);
+        this.dodgeDirZ = Math.cos(this.playerRotation);
+        this.spawnParticles(this.playerPos.x, this.playerPos.y + 0.8, this.playerPos.z, 0xa855f7, 18);
+        sound.playDodgeRoll();
+        this.evaluateSpearHits(4.5, 1.5);
+        this.callbacks.onNotification('Shadow Dash! 8m Invulnerable Phase Lunge!', 'info');
+        return;
+      }
+    } else if (this.activeCharacterId === 'swat_operator') {
+      // S.W.A.T. Operator Rifle Fire + Recoil Impulse + Muzzle Flash PointLight + Brass Shell Ejection
+      this.fireSwatRifle(gesture === 'swipe_up');
+      return;
+    } else if (this.activeCharacterId === 'bulky_knight' && gesture === 'swipe_up') {
+      // Bulky Knight Earthshatter Slam: leaps 3m and stuns all beasts within 6m
+      this.isGrounded = false;
+      this.playerVelY = 7.8;
+      this.isAttacking = true;
+      this.isHeavyAttack = true;
+      this.attackTimer = 0.52;
+      this.shockwaveTimer = 0.55;
+      this.shockwaveRingMesh.position.set(this.playerPos.x, this.playerPos.y + 0.08, this.playerPos.z);
+      this.shockwaveRingMesh.scale.set(1, 1, 1);
+      this.shockwaveRingMesh.visible = true;
+      this.cameraShakeIntensity = 0.42;
+      sound.playPartBreak();
+      this.spawnParticles(this.playerPos.x, this.playerPos.y + 0.4, this.playerPos.z, 0xf59e0b, 20);
+
+      for (const actor of this.beasts) {
+        if (actor.state.hp > 0 && Math.hypot(actor.state.x - this.playerPos.x, actor.state.z - this.playerPos.z) <= 6.8) {
+          actor.state.aiState = 'staggered';
+          actor.state.stateTimer = 4.0;
+          actor.hitThisSwing = false;
+        }
+      }
+      this.evaluateSpearHits(6.5, 2.0);
+      this.callbacks.onNotification('Earthshatter Slam! 6m Seismic Shockwave Stun!', 'loot');
+      return;
+    }
+
+    this.startSpearAttack();
+  }
+
+  private fireSwatRifle(burstShot = false) {
+    this.isAttacking = true;
+    this.attackTimer = 0.22;
+    this.muzzleFlashTimer = 0.05;
+    this.recoilImpulse = 1.0;
+    this.hunter.muzzleLight.intensity = 8.5;
+    sound.playHitImpact(false, burstShot);
+
+    const forwardX = Math.sin(this.playerRotation);
+    const forwardZ = Math.cos(this.playerRotation);
+    const rightX = -Math.cos(this.playerRotation);
+    const rightZ = Math.sin(this.playerRotation);
+
+    // 1. High-velocity rifle tracer projectile
+    const tracerGeo = createSculptedOrganicGeometry(
+      [
+        [0.0, 0.04, 0.04],
+        [0.5, 0.06, 0.06],
+        [1.0, 0.01, 0.01],
+      ],
+      6,
+      0.55,
+      0
+    );
+    tracerGeo.rotateX(Math.PI / 2);
+    const tracerMesh = new THREE.Mesh(
+      tracerGeo,
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+    );
+    tracerMesh.position.set(
+      this.playerPos.x + forwardX * 0.9,
+      this.playerPos.y + 1.45,
+      this.playerPos.z + forwardZ * 0.9
+    );
+    tracerMesh.rotation.y = this.playerRotation;
+    this.scene.add(tracerMesh);
+
+    // Aim assist toward locked-on beast or flying dragon
+    let vy = 0;
+    for (const b of this.beasts) {
+      if (b.state.hp > 0) {
+        const d = Math.hypot(b.state.x - this.playerPos.x, b.state.z - this.playerPos.z);
+        if (d < 36) {
+          vy = ((b.state.y + 1.2 - (this.playerPos.y + 1.45)) / Math.max(1, d)) * 46;
+          break;
+        }
+      }
+    }
+
+    this.projectiles.push({
+      mesh: tracerMesh,
+      vx: forwardX * 46,
+      vy,
+      vz: forwardZ * 46,
+      age: 0,
+      landed: false,
+      kind: 'rifle_bullet',
+      damage: WEAPON_REGISTRY[this.equippedWeapon].baseDamage * (burstShot ? 1.65 : 1.25),
+    });
+
+    // 2. Eject spinning brass shell casing from right ejection port
+    const brassGeo = createSculptedOrganicGeometry(
+      [
+        [0.0, 0.025, 0.025],
+        [1.0, 0.025, 0.025],
+      ],
+      6,
+      0.1,
+      0
+    );
+    const brassMesh = new THREE.Mesh(brassGeo, this.materialCache.mithrilGoldTrimMaterial);
+    brassMesh.position.set(
+      this.playerPos.x + rightX * 0.35,
+      this.playerPos.y + 1.42,
+      this.playerPos.z + rightZ * 0.35
+    );
+    this.scene.add(brassMesh);
+    this.projectiles.push({
+      mesh: brassMesh,
+      vx: rightX * 2.2,
+      vy: 3.5,
+      vz: rightZ * 2.2,
+      age: 0,
+      landed: false,
+      kind: 'brass_casing',
+      damage: 0,
+    });
+  }
+
+  private fireSpaceFighterPlasma() {
+    sound.playFocusPulse();
+    this.cameraShakeIntensity = 0.14;
+    const forwardX = Math.sin(this.spaceFighterRotY);
+    const forwardZ = Math.cos(this.spaceFighterRotY);
+    const rightX = -Math.cos(this.spaceFighterRotY);
+    const rightZ = Math.sin(this.spaceFighterRotY);
+
+    const boltGeo = createSculptedOrganicGeometry(
+      [
+        [0.0, 0.08, 0.08],
+        [0.5, 0.14, 0.14],
+        [1.0, 0.02, 0.02],
+      ],
+      8,
+      1.1,
+      0
+    );
+    boltGeo.rotateX(Math.PI / 2);
+
+    for (const side of [-1.6, 1.6]) {
+      const boltMesh = new THREE.Mesh(
+        boltGeo,
+        new THREE.MeshBasicMaterial({ color: 0x22d3ee })
+      );
+      boltMesh.position.set(
+        this.spaceFighterPos.x + rightX * side + forwardX * 2.2,
+        this.spaceFighterPos.y + 1.1,
+        this.spaceFighterPos.z + rightZ * side + forwardZ * 2.2
+      );
+      boltMesh.rotation.y = this.spaceFighterRotY;
+      this.scene.add(boltMesh);
+
+      this.projectiles.push({
+        mesh: boltMesh,
+        vx: forwardX * 60,
+        vy: -this.spaceFighterPitch * 28,
+        vz: forwardZ * 60,
+        age: 0,
+        landed: false,
+        kind: 'plasma_bolt',
+        damage: 64,
+      });
+    }
+  }
+
   public startSpearAttack() {
     if (this.isAttacking || this.isDodging) return;
     this.isAttacking = true;
     this.isHeavyAttack = false;
-    this.attackTimer = 0.34;
+    this.attackTimer = this.activeCharacterId === 'bulky_knight' ? 0.44 : 0.32;
     this.beasts.forEach((b) => (b.hitThisSwing = false));
     sound.playSpearSwing(false);
     this.callbacks.onStatsChange(this.playerStats);
@@ -902,10 +1354,10 @@ export class GameEngine {
   }
 
   public startDodgeRoll() {
-    if (this.isDodging) return;
+    if (this.isDodging || this.isPilotingSpaceFighter) return;
     this.isDodging = true;
     this.isAttacking = false;
-    this.dodgeTimer = 0.46;
+    this.dodgeTimer = 0.45;
     this.dodgeDirX = Math.sin(this.playerRotation);
     this.dodgeDirZ = Math.cos(this.playerRotation);
     sound.playDodgeRoll();
@@ -913,8 +1365,12 @@ export class GameEngine {
   }
 
   public jumpPlayer() {
+    if (this.isPilotingSpaceFighter) {
+      this.spaceFighterPos.y = Math.min(58, this.spaceFighterPos.y + 3.2);
+      this.playerPos.copy(this.spaceFighterPos);
+      return;
+    }
     if (this.isFlying) {
-      // In flight mode, pressing Jump boosts upward altitude
       this.playerPos.y = Math.min(48, this.playerPos.y + 2.6);
       this.spawnParticles(this.playerPos.x, this.playerPos.y, this.playerPos.z, 0x38bdf8, 6);
       return;
@@ -926,12 +1382,15 @@ export class GameEngine {
       sound.playDodgeRoll();
       this.spawnParticles(this.playerPos.x, this.playerPos.y, this.playerPos.z, 0xe2e8f0, 6);
     } else {
-      // Pressing Jump again in mid-air engages Aetherial Mithril Flight Mode!
       this.toggleFlightMode();
     }
   }
 
   public toggleFlightMode() {
+    if (this.isPilotingSpaceFighter) {
+      this.toggleSpaceFighterBoarding();
+      return;
+    }
     this.isFlying = !this.isFlying;
     this.playerStats.isFlying = this.isFlying;
     if (this.hunter.wings) {
@@ -947,18 +1406,50 @@ export class GameEngine {
       sound.playFocusPulse();
       this.spawnParticles(this.playerPos.x, this.playerPos.y, this.playerPos.z, 0x38bdf8, 12);
       this.callbacks.onNotification(
-        'Mithril Aether-Wings Deployed! [W/A/S/D] Fly · [Space] Ascend · [C] Descend · [V] Land',
+        'Spectral / Mithril Wings Deployed! Ride Thermal Updrafts (>14m) · [Space] Ascend · [C] Descend',
         'info'
       );
     } else {
-      this.callbacks.onNotification('Flight Wings Folded into Dorsal Pack · Returning to Ground', 'info');
+      this.callbacks.onNotification('Flight Wings Folded · Returning to Ground', 'info');
     }
     this.callbacks.onStatsChange(this.playerStats);
   }
 
-  /**
-   * Eat Cooked Meat & Sun-Berry Ration [Q]: Restores +650 kcal Nutrition and +45 Vitality HP via metabolic synthesis.
-   */
+  public toggleSpaceFighterBoarding() {
+    this.isPilotingSpaceFighter = !this.isPilotingSpaceFighter;
+    this.playerStats.isPilotingSpaceFighter = this.isPilotingSpaceFighter;
+    if (this.isPilotingSpaceFighter) {
+      this.mountedBeastActor = null;
+      this.playerStats.isMountedOnBeast = false;
+      this.isFlying = true;
+      this.playerStats.isFlying = true;
+      this.hunter.root.visible = false;
+      this.spaceFighterPos.y = Math.max(
+        this.spaceFighterPos.y,
+        this.terrain.getHeight(this.spaceFighterPos.x, this.spaceFighterPos.z) + 5.5
+      );
+      this.playerPos.copy(this.spaceFighterPos);
+      sound.playFocusPulse();
+      this.spawnParticles(this.spaceFighterPos.x, this.spaceFighterPos.y, this.spaceFighterPos.z, 0x22d3ee, 16);
+      this.callbacks.onNotification(
+        'Boarded Space Fighter (6-DOF)! Canopy Sealed & Twin Plasma Thrusters Ignited! [Strike] Dual Plasma Cannons · [E] Disembark',
+        'loot'
+      );
+    } else {
+      const gy = this.terrain.getHeight(this.spaceFighterPos.x, this.spaceFighterPos.z);
+      this.spaceFighterPos.y = gy + 0.25;
+      this.spaceFighter.root.position.copy(this.spaceFighterPos);
+      this.spaceFighter.root.rotation.set(0, this.spaceFighterRotY, 0);
+      this.hunter.root.visible = true;
+      this.isFlying = false;
+      this.playerStats.isFlying = false;
+      this.playerPos.set(this.spaceFighterPos.x - 2.6, gy, this.spaceFighterPos.z);
+      this.hunter.root.position.copy(this.playerPos);
+      this.callbacks.onNotification('Disembarked Space Fighter', 'info');
+    }
+    this.callbacks.onStatsChange(this.playerStats);
+  }
+
   public eatFoodRation() {
     if (this.playerStats.foodRations <= 0) {
       this.callbacks.onNotification(
@@ -980,9 +1471,6 @@ export class GameEngine {
     this.callbacks.onStatsChange(this.playerStats);
   }
 
-  /**
-   * Drink Freshwater Canteen [H]: Restores +600 mL Hydration and regulates core body temperature.
-   */
   public drinkWaterCanteen() {
     const biome = getTerrainBiome(this.playerPos.x, this.playerPos.z);
     if (biome === 'river' || biome === 'springs') {
@@ -1017,9 +1505,6 @@ export class GameEngine {
     this.callbacks.onStatsChange(this.playerStats);
   }
 
-  /**
-   * Consume or Bio-Synthesize a Collected Creature Egg [G] for massive caloric & vitality surge!
-   */
   public useCollectedEgg() {
     if (this.playerStats.eggsCollected <= 0) {
       this.callbacks.onNotification(
@@ -1043,7 +1528,6 @@ export class GameEngine {
     this.callbacks.onStatsChange(this.playerStats);
   }
 
-  // Keep alias for any legacy caller
   public useHealFlask() {
     this.eatFoodRation();
   }
@@ -1065,27 +1549,33 @@ export class GameEngine {
     this.playerStats.traps--;
     const trapGroup = new THREE.Group();
     const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(1.1, 0.08, 8, 18),
+      new THREE.RingGeometry(0.95, 1.18, 24).rotateX(-Math.PI / 2),
       this.materialCache.boneMaterial
     );
-    ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.12;
     trapGroup.add(ring);
     trapGroup.position.set(this.playerPos.x, this.playerPos.y, this.playerPos.z);
     this.scene.add(trapGroup);
     this.traps.push({ mesh: trapGroup, x: this.playerPos.x, z: this.playerPos.z, active: true });
     sound.playTrapPlace();
-    this.callbacks.onNotification('Placed Sinew Snare Trap!', 'info');
+    this.callbacks.onNotification('Placed Sinew Snare Trap / Electro-Net Mine!', 'info');
     this.callbacks.onStatsChange(this.playerStats);
   }
 
   public throwStone() {
     if (this.playerStats.lureStones <= 0) return;
     this.playerStats.lureStones--;
-    const stoneMesh = new THREE.Mesh(
-      new THREE.DodecahedronGeometry(0.18, 0),
-      this.materialCache.stoneMaterial
+    const stoneGeo = createSculptedOrganicGeometry(
+      [
+        [0.0, 0.05, 0.05],
+        [0.5, 0.18, 0.18],
+        [1.0, 0.05, 0.05],
+      ],
+      8,
+      0.26,
+      -0.13
     );
+    const stoneMesh = new THREE.Mesh(stoneGeo, this.materialCache.stoneMaterial);
     stoneMesh.position.set(this.playerPos.x, this.playerPos.y + 1.4, this.playerPos.z);
     this.scene.add(stoneMesh);
 
@@ -1098,13 +1588,15 @@ export class GameEngine {
       vz: forwardZ * 16,
       age: 0,
       landed: false,
+      kind: 'lure_stone',
+      damage: 0,
     });
     this.callbacks.onStatsChange(this.playerStats);
   }
 
   public toggleHunterFocus() {
     this.focusVisionActive = !this.focusVisionActive;
-    this.focusTimer = this.focusVisionActive ? 10 : 0;
+    this.focusTimer = this.focusVisionActive ? 14 : 0;
     sound.playFocusPulse();
     this.callbacks.onFocusChange(this.focusVisionActive);
     this.beasts.forEach((b) => {
@@ -1113,10 +1605,65 @@ export class GameEngine {
         mesh.visible = this.focusVisionActive && !!wp && !wp.broken && b.state.hp > 0;
       });
     });
+    if (this.focusVisionActive) {
+      const modeDesc =
+        this.activeCharacterId === 'swat_operator'
+          ? 'Aim-Down-Sights (ADS) + 3D Footprint Tracking Trail Active!'
+          : this.activeCharacterId === 'bulky_knight'
+          ? 'Iron Bulwark Shield Wall (-80% Dmg) + 3D Footprint Tracking Trail Active!'
+          : 'Focus Vision Active: Following 3D Beast Footprint Trail & Weak Points!';
+      this.callbacks.onNotification(modeDesc, 'info');
+    }
   }
 
   public handleInteract() {
-    // 1. Check Creature & Sky-Dragon Egg Nests (ARK Wyvern Heist Mechanic!)
+    // 0. Check if already piloting Space Fighter or mounted on Armor Dinosaur
+    if (this.isPilotingSpaceFighter) {
+      this.toggleSpaceFighterBoarding();
+      return;
+    }
+    if (this.mountedBeastActor) {
+      this.mountedBeastActor = null;
+      this.playerStats.isMountedOnBeast = false;
+      this.callbacks.onNotification('Dismounted Armor Dinosaur', 'info');
+      this.callbacks.onStatsChange(this.playerStats);
+      return;
+    }
+
+    // 0b. Check Space Fighter Boarding (within 4.8m of Space Fighter)
+    if (
+      Math.hypot(
+        this.playerPos.x - this.spaceFighterPos.x,
+        this.playerPos.z - this.spaceFighterPos.z
+      ) < 4.8
+    ) {
+      this.toggleSpaceFighterBoarding();
+      return;
+    }
+
+    // 0c. Check Taming & Mounting a Snared Armor Dinosaur (brontoshell)
+    for (const actor of this.beasts) {
+      if (
+        actor.state.hp > 0 &&
+        actor.state.species === 'brontoshell' &&
+        (actor.state.snaredTimer > 0 || actor.state.aiState === 'staggered') &&
+        Math.hypot(this.playerPos.x - actor.state.x, this.playerPos.z - actor.state.z) < 6.0
+      ) {
+        this.mountedBeastActor = actor;
+        this.playerStats.isMountedOnBeast = true;
+        actor.state.aiState = 'patrol';
+        actor.state.snaredTimer = 0;
+        sound.playVictoryFanfare();
+        this.callbacks.onNotification(
+          'Tamed & Mounted Armor Dinosaur (Spine_Mount_Socket)! Ride as a Living Tank & Smash Boulders!',
+          'loot'
+        );
+        this.callbacks.onStatsChange(this.playerStats);
+        return;
+      }
+    }
+
+    // 1. Check Creature & Sky-Dragon Egg Nests (OnEggStolen event triggers Dragon CHASE!)
     for (const nest of this.eggNests) {
       if (!nest.data.collected) {
         const dist = Math.hypot(this.playerPos.x - nest.data.x, this.playerPos.z - nest.data.z);
@@ -1127,7 +1674,7 @@ export class GameEngine {
           this.playerStats.eggsCollected = (this.playerStats.eggsCollected || 0) + 1;
           this.playerStats.eggInventory = {
             ...(this.playerStats.eggInventory || {}),
-            [nest.data.species]: ((this.playerStats.eggInventory?.[nest.data.species] || 0) + 1),
+            [nest.data.species]: (this.playerStats.eggInventory?.[nest.data.species] || 0) + 1,
           };
           this.playerStats.food = Math.min(
             this.playerStats.maxFood,
@@ -1141,21 +1688,18 @@ export class GameEngine {
           sound.playGather();
           this.spawnParticles(nest.data.x, nest.data.y + 0.8, nest.data.z, 0xfacc15, 14);
 
-          // Alert nearby parent beast or Sky-Dragon!
+          // OnEggStolen event: immediately transition Dragon Boss & matching species to CHASE!
           for (const b of this.beasts) {
             if (b.state.hp > 0 && (b.state.species === nest.data.species || b.state.species === 'sky_dragon')) {
-              const dBeast = Math.hypot(b.state.x - nest.data.x, b.state.z - nest.data.z);
-              if (dBeast < 55) {
-                b.state.aiState = 'chase';
-                b.state.enraged = true;
-                sound.playBeastRoar(b.state.species);
-              }
+              b.state.aiState = 'chase';
+              b.state.enraged = true;
+              sound.playBeastRoar(b.state.species);
             }
           }
 
           this.advanceAdventureProgress(nest.data.species, 'egg');
           this.callbacks.onNotification(
-            `Egg Extracted: ${nest.data.name} (${nest.data.eggWeightKg}kg · ${nest.data.caloricValueKcal} kcal)! Beware Parent Pursuit!`,
+            `OnEggStolen: Extracted ${nest.data.name}! Dragon Boss & Parent Enraged in CHASE!`,
             'loot'
           );
           this.callbacks.onStatsChange(this.playerStats);
@@ -1241,7 +1785,7 @@ export class GameEngine {
       }
     }
 
-    // 6. Check Track Clues
+    // 6. Check Track Clues & Diurnal / Nocturnal Flora Gathering
     for (const c of this.clues) {
       if (!c.data.discovered) {
         const dist = Math.hypot(this.playerPos.x - c.data.x, this.playerPos.z - c.data.z);
@@ -1249,21 +1793,30 @@ export class GameEngine {
           c.data.discovered = true;
           c.mesh.visible = false;
           sound.playGather();
-          this.inventoryMaterials.sun_herb = (this.inventoryMaterials.sun_herb || 0) + 1;
+          if (this.dayNightState.isNight) {
+            this.inventoryMaterials.volcanic_resin = (this.inventoryMaterials.volcanic_resin || 0) + 2;
+            this.inventoryMaterials.sun_herb = (this.inventoryMaterials.sun_herb || 0) + 1;
+            this.callbacks.onNotification(
+              `Nocturnal Track & Flora Harvested: ${c.data.description} (+2 Luminous Night-Spore Resin · +1 Herb)`,
+              'loot'
+            );
+          } else {
+            this.inventoryMaterials.sun_herb = (this.inventoryMaterials.sun_herb || 0) + 2;
+            this.callbacks.onNotification(
+              `Diurnal Track & Flora Harvested: ${c.data.description} (+2 Sun-Herbs · +1 Ration)`,
+              'loot'
+            );
+          }
           this.playerStats.foodRations = Math.min(this.playerStats.maxFoodRations, this.playerStats.foodRations + 1);
-          this.totalMaterialsGathered++;
+          this.totalMaterialsGathered += 2;
           this.upgradeKnowledge(c.data.species, 'sighted');
-          this.callbacks.onNotification(
-            `Track Examined: ${c.data.description} (+1 Sun-Herb · +1 Food Ration)`,
-            'loot'
-          );
           this.callbacks.onStatsChange(this.playerStats);
           return;
         }
       }
     }
 
-    // 7. Check Freshwater River / Springs Hydration & Berry Foraging
+    // 7. Check Freshwater River / Springs Hydration
     const biome = getTerrainBiome(this.playerPos.x, this.playerPos.z);
     if (biome === 'river' || biome === 'springs') {
       this.drinkWaterCanteen();
@@ -1271,7 +1824,7 @@ export class GameEngine {
     }
   }
 
-  private advanceAdventureProgress(species: BeastSpecies, eventType: 'egg' | 'kill') {
+  private advanceAdventureProgress(_species: BeastSpecies, eventType: 'egg' | 'kill') {
     let updated = false;
     for (const adv of this.adventureMissions) {
       if (adv.completed) continue;
@@ -1300,20 +1853,20 @@ export class GameEngine {
       this.inventoryMaterials.raptor_claw = (this.inventoryMaterials.raptor_claw || 0) + 2;
       this.inventoryMaterials.coral_stone = (this.inventoryMaterials.coral_stone || 0) + 2;
       this.inventoryMaterials.beast_bone = (this.inventoryMaterials.beast_bone || 0) + 3;
-      this.callbacks.onNotification('Carved River Snapjaw: +2 Talon, +2 Coral Stone & +2 Fish Rations!', 'loot');
+      this.callbacks.onNotification('Carved Jason T (Snapjaw Leviathan): +2 Talon, +2 Coral Stone & +2 Rations!', 'loot');
     } else if (species === 'brontoshell') {
       this.inventoryMaterials.bronto_shell = (this.inventoryMaterials.bronto_shell || 0) + 2;
       this.inventoryMaterials.coral_stone = (this.inventoryMaterials.coral_stone || 0) + 2;
-      this.callbacks.onNotification('Carved: +2 Brontoshell Carapace, +2 Coral Stone & +2 Rations!', 'loot');
+      this.callbacks.onNotification('Carved Armor Dinosaur: +2 Carapace, +2 Coral Stone & +2 Rations!', 'loot');
     } else if (species === 'frostfang') {
       this.inventoryMaterials.thunder_horn = (this.inventoryMaterials.thunder_horn || 0) + 2;
       this.inventoryMaterials.obsidian_shard = (this.inventoryMaterials.obsidian_shard || 0) + 2;
       this.inventoryMaterials.beast_bone = (this.inventoryMaterials.beast_bone || 0) + 3;
-      this.callbacks.onNotification('Carved Frostfang Mammoth: +2 Glacial Ivory, +2 Obsidian & +2 Rations!', 'loot');
+      this.callbacks.onNotification('Carved Glacial Behemoth: +2 Glacial Ivory, +2 Obsidian & +2 Rations!', 'loot');
     } else if (species === 'thunderhorn') {
       this.inventoryMaterials.thunder_horn = (this.inventoryMaterials.thunder_horn || 0) + 2;
       this.inventoryMaterials.obsidian_shard = (this.inventoryMaterials.obsidian_shard || 0) + 3;
-      this.callbacks.onNotification('Carved: +2 Conductive Crest-Horn, +3 Obsidian Shard & +2 Rations!', 'loot');
+      this.callbacks.onNotification('Carved Triceratops Beetle: +2 Conductive Crest-Horn, +3 Obsidian Shard!', 'loot');
     } else if (species === 'sky_dragon') {
       this.inventoryMaterials.dragon_scale = (this.inventoryMaterials.dragon_scale || 0) + 3;
       this.inventoryMaterials.titan_fang = (this.inventoryMaterials.titan_fang || 0) + 2;
@@ -1347,7 +1900,7 @@ export class GameEngine {
     const def = WEAPON_REGISTRY[id];
     this.playerStats.attackPower = def.baseDamage;
     this.playerStats.critChance = def.critChance;
-    this.hunter.updateWeapon(id);
+    this.heroRoster.forEach((slot) => slot.rig.updateWeapon(id));
     this.callbacks.onWeaponChange(id);
     this.callbacks.onStatsChange(this.playerStats);
   }
@@ -1356,19 +1909,24 @@ export class GameEngine {
     this.equippedArmor = id;
     if (!this.ownedArmors.includes(id)) this.ownedArmors.push(id);
     const def = ARMOR_REGISTRY[id];
-    this.playerStats.defense = def.defense;
+    const profile = PLAYABLE_CHARACTER_PROFILES[this.activeCharacterId];
+    this.playerStats.defense = def.defense + profile.defenseBonus;
     this.playerStats.maxHp = 150 + def.maxHpBonus;
     this.playerStats.hp = Math.min(this.playerStats.maxHp, this.playerStats.hp + def.maxHpBonus);
-    this.hunter.updateArmor(id);
+    this.heroRoster.forEach((slot) => slot.rig.updateArmor(id));
     this.callbacks.onStatsChange(this.playerStats);
   }
 
   public setGameState(next: GameState) {
     this.gameState = next;
+    document.body.dataset.state = next === 'victory' ? 'gameover' : next;
   }
 
   public respawnAtCampfire() {
     this.isFlying = false;
+    this.isPilotingSpaceFighter = false;
+    this.mountedBeastActor = null;
+    this.hunter.root.visible = true;
     this.playerPos.set(0, this.terrain.getHeight(0, 31.8), 31.8);
     this.playerRotation = Math.PI;
     this.cameraYaw = Math.PI;
@@ -1384,7 +1942,7 @@ export class GameEngine {
     return {
       version: 1,
       timestamp: Date.now(),
-      playerName: 'Koa',
+      playerName: PLAYABLE_CHARACTER_PROFILES[this.activeCharacterId].name,
       biome: this.terrain.getBiome(this.playerPos.x, this.playerPos.z),
       playerPos: { x: this.playerPos.x, y: this.playerPos.y, z: this.playerPos.z },
       playerStats: { ...this.playerStats },
@@ -1422,8 +1980,9 @@ export class GameEngine {
     this.animFrameId = requestAnimationFrame(this.tick);
     const dt = Math.min(0.05, Math.max(0.001, (now - this.lastTime) / 1000));
     this.lastTime = now;
+    const elapsedSec = now * 0.001;
 
-    this.animateEnvironment(now * 0.001, dt);
+    this.animateEnvironment(elapsedSec, dt);
 
     if (this.gameState === 'title') {
       this.titleOrbitAngle += dt * 0.18;
@@ -1438,9 +1997,10 @@ export class GameEngine {
 
     if (this.gameState === 'playing') {
       this.elapsedRunTime += dt;
-      this.updatePlayer(dt);
-      this.updateNPCs(now * 0.001);
-      this.updateBeasts(dt);
+      this.updatePlayer(dt, elapsedSec);
+      this.updateAutonomousCompanions(dt, elapsedSec);
+      this.updateNPCs(elapsedSec);
+      this.updateBeasts(dt, elapsedSec);
       this.updateProjectilesAndParticles(dt);
       this.updateCamera(dt);
       this.checkInteractPrompts();
@@ -1450,6 +2010,31 @@ export class GameEngine {
   }
 
   private animateEnvironment(timeSec: number, dt: number) {
+    // 0. Day-Night Cycle Progression & Dynamic Lighting Engine
+    this.timeOfDayHours = (this.timeOfDayHours + dt * 0.05) % 24;
+    const prevPhase = this.dayNightState.phase;
+    this.dayNightState = computeDayNightCycle(this.timeOfDayHours);
+    this.playerStats.timeOfDayHours = this.dayNightState.timeOfDayHours;
+    this.playerStats.isNight = this.dayNightState.isNight;
+    if (prevPhase !== this.dayNightState.phase) {
+      this.callbacks.onDayNightChange?.(this.dayNightState);
+    }
+
+    const sunAngle = ((this.timeOfDayHours - 6) / 24) * Math.PI * 2;
+    this.sunLight.position.set(
+      Math.cos(sunAngle) * 65,
+      Math.max(12, Math.sin(sunAngle) * 75),
+      35
+    );
+    this.sunLight.intensity = this.dayNightState.sunIntensity;
+    this.hemiLight.intensity = this.dayNightState.ambientIntensity;
+    if (this.scene.background instanceof THREE.Color) {
+      this.scene.background.setHex(this.dayNightState.skyColorHex);
+    }
+    if (this.scene.fog instanceof THREE.FogExp2) {
+      this.scene.fog.color.setHex(this.dayNightState.fogColorHex);
+    }
+
     // 1. Real Atmospheric & Fluid Physics calculation
     const biome = getTerrainBiome(this.playerPos.x, this.playerPos.z);
     this.currentAtmosphere = computeAtmosphericPhysics(
@@ -1478,8 +2063,8 @@ export class GameEngine {
     const windRot = Math.atan2(wx, wz);
     for (const r of this.airRibbons) {
       const drift = (timeSec * 3.8 + r.phase * 5) % 28;
-      r.mesh.position.x = r.baseX + (wx * drift) * 0.35;
-      r.mesh.position.z = r.baseZ + (wz * drift) * 0.35;
+      r.mesh.position.x = r.baseX + wx * drift * 0.35;
+      r.mesh.position.z = r.baseZ + wz * drift * 0.35;
       r.mesh.position.y = r.baseY + Math.sin(timeSec * 2 + r.phase) * 0.45;
       r.mesh.rotation.y = windRot + Math.PI / 2;
     }
@@ -1500,7 +2085,7 @@ export class GameEngine {
       prop.rotation.x = Math.cos(timeSec * 1.7 + i * 0.3) * swayAmp * 0.6;
     }
 
-    // 4b. Dynamic Instanced Grass Bending around Player & Wind Sway (Roblox / AAA Turf Physics)
+    // 4b. Dynamic Instanced Grass Bending around Player
     const gData = this.terrain.grassData;
     const gMesh = this.terrain.instancedGrass;
     const px = this.playerPos.x;
@@ -1515,7 +2100,6 @@ export class GameEngine {
         this.grassDummy.position.set(g.x, g.y, g.z);
         const windTilt = Math.sin(timeSec * 2.8 + g.x * 0.4 + g.z * 0.4) * (0.12 + swayAmp);
         if (dist < 2.1 && this.isGrounded) {
-          // Bend grass blades outward under player footsteps!
           const pushFactor = (1 - dist / 2.1) * 0.72;
           const pushAngle = Math.atan2(dx, dz);
           this.grassDummy.rotation.set(
@@ -1538,18 +2122,15 @@ export class GameEngine {
 
     // 4c. Flickering Campfire Flame & PointLight Illumination
     const campFlame = this.terrain.campGroup.getObjectByName('campfire_flame');
-    const campInner = this.terrain.campGroup.getObjectByName('campfire_flame_inner');
     const campLight = this.terrain.campGroup.getObjectByName('campfire_light') as THREE.PointLight | undefined;
     if (campFlame) {
       const flicker = 0.92 + Math.sin(timeSec * 14) * 0.12 + Math.cos(timeSec * 23) * 0.08;
       campFlame.scale.set(flicker, 0.9 + Math.sin(timeSec * 18) * 0.16, flicker);
       campFlame.rotation.y = timeSec * 1.5;
     }
-    if (campInner) {
-      campInner.scale.setScalar(0.9 + Math.cos(timeSec * 20) * 0.15);
-    }
     if (campLight) {
-      campLight.intensity = 5.2 + Math.sin(timeSec * 14) * 0.95 + Math.cos(timeSec * 23) * 0.55;
+      const nightBoost = this.dayNightState.isNight ? 2.2 : 0;
+      campLight.intensity = 5.2 + nightBoost + Math.sin(timeSec * 14) * 0.95 + Math.cos(timeSec * 23) * 0.55;
     }
 
     // 5. Animate Swimming 3D River & Ocean Fish
@@ -1569,6 +2150,51 @@ export class GameEngine {
     if (weatherChanged) {
       this.callbacks.onWeatherChange?.(this.weatherSystem.currentWeather);
     }
+
+    // 7. Shockwave ring expansion
+    if (this.shockwaveTimer > 0) {
+      this.shockwaveTimer -= dt;
+      const progress = 1 - this.shockwaveTimer / 0.55;
+      const scale = 1 + progress * 5.5;
+      this.shockwaveRingMesh.scale.set(scale, scale, 1);
+      (this.shockwaveRingMesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, (1 - progress) * 0.85);
+      if (this.shockwaveTimer <= 0) {
+        this.shockwaveRingMesh.visible = false;
+      }
+    }
+  }
+
+  private updateAutonomousCompanions(dt: number, elapsedSec: number) {
+    this.heroRoster.forEach((slot, charId) => {
+      if (charId === this.activeCharacterId) return;
+
+      // Autonomous AI patrol around Base Camp perimeter & river crossing
+      slot.aiAngle += dt * 0.38;
+      const anchorX = charId === 'swat_operator' ? -5.5 : 5.5;
+      const anchorZ = 27.5;
+      const targetX = anchorX + Math.cos(slot.aiAngle) * 3.2;
+      const targetZ = anchorZ + Math.sin(slot.aiAngle) * 3.2;
+      const dx = targetX - slot.pos.x;
+      const dz = targetZ - slot.pos.z;
+      const dist = Math.hypot(dx, dz);
+
+      if (dist > 0.25) {
+        const targetRot = Math.atan2(dx, dz);
+        slot.rotation = stepAngleShortestArc(slot.rotation, targetRot, dt * 5);
+        slot.pos.x += Math.sin(slot.rotation) * 2.1 * dt;
+        slot.pos.z += Math.cos(slot.rotation) * 2.1 * dt;
+        slot.gaitPhase += dt * 6.5;
+      }
+      slot.pos.y = this.terrain.getHeight(slot.pos.x, slot.pos.z);
+      slot.rig.root.position.copy(slot.pos);
+      slot.rig.root.rotation.y = slot.rotation;
+
+      // Update companion skeletal shader & nodes
+      slot.rig.controller.uniforms.uStridePhase.value = slot.gaitPhase;
+      slot.rig.controller.uniforms.uStrideAmp.value = 0.25;
+      slot.rig.controller.uniforms.uHeadYaw.value = Math.sin(elapsedSec * 1.5) * 0.3;
+      slot.rig.controller.update(dt, elapsedSec);
+    });
   }
 
   private updateNPCs(timeSec: number) {
@@ -1584,12 +2210,12 @@ export class GameEngine {
   }
 
   private resolveObstacleCollisions() {
-    if (this.isFlying) return;
+    if (this.isFlying || this.isPilotingSpaceFighter) return;
     const obstacles = [
-      { x: 0, z: 28, r: 1.68 },     // Campfire Stone Ring (prevents clipping inside campfire!)
-      { x: 2.8, z: 27.2, r: 1.25 }, // Crafting Workbench & Anvil
-      { x: -3.4, z: 25.5, r: 2.1 }, // Tribal Canopy Tent
-      { x: 0, z: 5, r: 3.75 },      // Ancient Signal Tower Base
+      { x: 0, z: 28, r: 1.68 },
+      { x: 2.8, z: 27.2, r: 1.25 },
+      { x: -3.4, z: 25.5, r: 2.1 },
+      { x: 0, z: 5, r: 3.75 },
     ];
     for (const obs of obstacles) {
       const dx = this.playerPos.x - obs.x;
@@ -1604,7 +2230,15 @@ export class GameEngine {
     }
   }
 
-  private updatePlayer(dt: number) {
+  private updatePlayer(dt: number, elapsedSec: number) {
+    if (this.muzzleFlashTimer > 0) {
+      this.muzzleFlashTimer -= dt;
+      if (this.muzzleFlashTimer <= 0) {
+        this.hunter.muzzleLight.intensity = 0;
+      }
+    }
+    this.recoilImpulse = THREE.MathUtils.damp(this.recoilImpulse, 0, 14, dt);
+
     if (this.isChargingHeavy) {
       this.heavyChargeTime += dt;
       if (this.heavyChargeTime >= 0.75) {
@@ -1629,34 +2263,150 @@ export class GameEngine {
       this.focusLight.intensity = 0;
     }
 
+    let moveForward = -this.virtualMoveY;
+    let moveRight = this.virtualMoveX;
+    if (this.keysPressed.has('KeyW') || this.keysPressed.has('ArrowUp')) moveForward += 1;
+    if (this.keysPressed.has('KeyS') || this.keysPressed.has('ArrowDown')) moveForward -= 1;
+    if (this.keysPressed.has('KeyD') || this.keysPressed.has('ArrowRight')) moveRight += 1;
+    if (this.keysPressed.has('KeyA') || this.keysPressed.has('ArrowLeft')) moveRight -= 1;
+
+    // 1. Space Fighter 6-DOF Flight & Articulation Mode
+    if (this.isPilotingSpaceFighter) {
+      const moveResult = computeCameraRelativeMovement(
+        moveForward,
+        moveRight,
+        this.cameraYaw,
+        22.5,
+        dt
+      );
+      if (moveResult.isMoving) {
+        const prevRot = this.spaceFighterRotY;
+        this.spaceFighterRotY = stepAngleShortestArc(
+          this.spaceFighterRotY,
+          moveResult.targetRotation,
+          Math.min(1, dt * 8)
+        );
+        let rotDelta = this.spaceFighterRotY - prevRot;
+        while (rotDelta > Math.PI) rotDelta -= Math.PI * 2;
+        while (rotDelta < -Math.PI) rotDelta += Math.PI * 2;
+        // Bank chassis up to +-42 deg (0.73 rad)
+        this.spaceFighterRoll = THREE.MathUtils.damp(
+          this.spaceFighterRoll,
+          Math.max(-0.73, Math.min(0.73, -rotDelta * 8)),
+          8,
+          dt
+        );
+        this.spaceFighterPos.x = Math.max(-125, Math.min(125, this.spaceFighterPos.x + moveResult.dx));
+        this.spaceFighterPos.z = Math.max(-125, Math.min(125, this.spaceFighterPos.z + moveResult.dz));
+      } else {
+        this.spaceFighterRoll = THREE.MathUtils.damp(this.spaceFighterRoll, 0, 8, dt);
+      }
+
+      let vSpeed = 0;
+      if (this.keysPressed.has('Space')) vSpeed += 9.5;
+      if (this.keysPressed.has('KeyC') || this.keysPressed.has('ControlLeft')) vSpeed -= 9.5;
+      const groundAtFighter = this.terrain.getHeight(this.spaceFighterPos.x, this.spaceFighterPos.z);
+      this.spaceFighterPos.y = Math.max(
+        groundAtFighter + 1.2,
+        Math.min(62, this.spaceFighterPos.y + vSpeed * dt)
+      );
+      this.spaceFighterPitch = THREE.MathUtils.damp(this.spaceFighterPitch, -vSpeed * 0.03, 8, dt);
+
+      // Articulating Canopy_Node (-65 deg open on ground vs 0 sealed in flight)
+      this.spaceFighter.canopyNode.rotation.x = THREE.MathUtils.damp(
+        this.spaceFighter.canopyNode.rotation.x,
+        0,
+        10,
+        dt
+      );
+
+      // Retractable Landing Gear above 5m altitude
+      const altAboveGround = (this.spaceFighterPos.y - groundAtFighter) * 12.5;
+      const gearTargetRot = altAboveGround > 5 ? Math.PI / 2 : 0;
+      this.spaceFighter.gearFront.rotation.x = THREE.MathUtils.damp(
+        this.spaceFighter.gearFront.rotation.x,
+        gearTargetRot,
+        8,
+        dt
+      );
+      this.spaceFighter.gearLeft.rotation.z = THREE.MathUtils.damp(
+        this.spaceFighter.gearLeft.rotation.z,
+        gearTargetRot,
+        8,
+        dt
+      );
+      this.spaceFighter.gearRight.rotation.z = THREE.MathUtils.damp(
+        this.spaceFighter.gearRight.rotation.z,
+        -gearTargetRot,
+        8,
+        dt
+      );
+
+      // Aileron & Rudder deflection
+      this.spaceFighter.aileronLeft.rotation.x = this.spaceFighterRoll * 0.5;
+      this.spaceFighter.aileronRight.rotation.x = -this.spaceFighterRoll * 0.5;
+      this.spaceFighter.rudder.rotation.y = -this.spaceFighterRoll * 0.4;
+
+      // Twin Plasma Thrusters scale
+      const thrustScale = moveResult.isMoving ? 1.85 : 1.05;
+      this.spaceFighter.thrusterLeft.scale.z = thrustScale + Math.sin(elapsedSec * 25) * 0.2;
+      this.spaceFighter.thrusterRight.scale.z = thrustScale + Math.cos(elapsedSec * 25) * 0.2;
+
+      this.spaceFighter.root.position.copy(this.spaceFighterPos);
+      this.spaceFighter.root.rotation.set(this.spaceFighterPitch, this.spaceFighterRotY, this.spaceFighterRoll);
+      this.spaceFighter.controller.update(dt, elapsedSec);
+
+      this.playerPos.copy(this.spaceFighterPos);
+      this.playerRotation = this.spaceFighterRotY;
+      this.playerStats.altitude = Math.round(this.spaceFighterPos.y * 12.5);
+      this.playerStats.airSpeed = moveResult.isMoving ? 22.5 : 0;
+      this.callbacks.onStatsChange(this.playerStats);
+      return;
+    } else {
+      // Parked Space Fighter canopy stays open (-65 deg = -1.13 rad) when player is nearby
+      const distToFighter = Math.hypot(
+        this.playerPos.x - this.spaceFighterPos.x,
+        this.playerPos.z - this.spaceFighterPos.z
+      );
+      const targetCanopy = distToFighter < 6.0 ? -1.13 : 0;
+      this.spaceFighter.canopyNode.rotation.x = THREE.MathUtils.damp(
+        this.spaceFighter.canopyNode.rotation.x,
+        targetCanopy,
+        6,
+        dt
+      );
+    }
+
     let isMovingHoriz = false;
     let moveStepDist = 0;
+    const charProfile = PLAYABLE_CHARACTER_PROFILES[this.activeCharacterId];
 
-    // Dodge roll / Air-Dash movement
+    // Dodge roll / Tactical Dive / Shadow Dash movement
     if (this.isDodging) {
       this.dodgeTimer -= dt;
-      const rollSpeed = this.isFlying ? 18.5 : 13.5;
+      const rollSpeed =
+        this.activeCharacterId === 'demon_hunter' ? 20.5 : this.isFlying ? 18.5 : 13.5;
       const step = rollSpeed * dt;
       this.playerPos.x += this.dodgeDirX * step;
       this.playerPos.z += this.dodgeDirZ * step;
       moveStepDist = step;
-      this.hunter.torso.rotation.x = (1 - this.dodgeTimer / 0.46) * Math.PI * 2;
+      if (this.activeCharacterId === 'swat_operator') {
+        // S.W.A.T. 450ms full-body Tactical Dive roll
+        this.hunter.torso.rotation.x = (1 - this.dodgeTimer / 0.45) * Math.PI * 2;
+      } else {
+        this.hunter.torso.rotation.x = 0.55;
+      }
       if (this.dodgeTimer <= 0) {
         this.isDodging = false;
         this.hunter.torso.rotation.x = 0;
       }
       isMovingHoriz = true;
     } else {
-      // Camera-Relative Joystick & Keyboard Movement
-      let moveForward = -this.virtualMoveY;
-      let moveRight = this.virtualMoveX;
-
-      if (this.keysPressed.has('KeyW') || this.keysPressed.has('ArrowUp')) moveForward += 1;
-      if (this.keysPressed.has('KeyS') || this.keysPressed.has('ArrowDown')) moveForward -= 1;
-      if (this.keysPressed.has('KeyD') || this.keysPressed.has('ArrowRight')) moveRight += 1;
-      if (this.keysPressed.has('KeyA') || this.keysPressed.has('ArrowLeft')) moveRight -= 1;
-
-      const baseSpeed = this.isFlying ? 14.2 : 8.4;
+      const baseSpeed = this.isFlying
+        ? 14.5
+        : this.mountedBeastActor
+        ? 11.5
+        : charProfile.moveSpeed;
 
       const moveResult = computeCameraRelativeMovement(
         moveForward,
@@ -1674,7 +2424,6 @@ export class GameEngine {
           moveResult.targetRotation,
           Math.min(1, dt * 14)
         );
-        // Compute shortest-arc angular turn rate for FC Mobile / GTA turn-leaning
         let rotDelta = this.playerRotation - prevRot;
         while (rotDelta > Math.PI) rotDelta -= Math.PI * 2;
         while (rotDelta < -Math.PI) rotDelta += Math.PI * 2;
@@ -1689,15 +2438,12 @@ export class GameEngine {
       }
     }
 
-    // Resolve collisions against Campfire Stone Ring, Workbench, Tent, and Signal Tower
     this.resolveObstacleCollisions();
 
-    // Clamp to Expanded 420x420 Island Bounds (-125 to +125)
     this.playerPos.x = Math.max(-125, Math.min(125, this.playerPos.x));
     this.playerPos.z = Math.max(-125, Math.min(125, this.playerPos.z));
     const groundY = Math.max(-0.2, this.terrain.getHeight(this.playerPos.x, this.playerPos.z));
 
-    // Vertical Physics: 3D Aerodynamic Flight vs Newtonian Jump & Gravity
     if (this.isFlying) {
       let verticalSpeed = 0;
       if (this.keysPressed.has('Space')) verticalSpeed += 7.5;
@@ -1725,138 +2471,134 @@ export class GameEngine {
       this.playerPos.y = groundY;
     }
 
-    // Distance-Synced 18-Joint Skeletal Gait, Knee/Elbow Flexion & Terrain Foot IK
+    // If mounted on Tamed Armor Dinosaur, sync dinosaur position & place hunter on Spine_Mount_Socket
+    if (this.mountedBeastActor) {
+      this.mountedBeastActor.state.x = this.playerPos.x;
+      this.mountedBeastActor.state.y = groundY;
+      this.mountedBeastActor.state.z = this.playerPos.z;
+      this.mountedBeastActor.state.rotation = this.playerRotation;
+      this.mountedBeastActor.rig.root.position.set(this.playerPos.x, groundY, this.playerPos.z);
+      this.mountedBeastActor.rig.root.rotation.y = this.playerRotation;
+    }
+
+    // Per-Character Skeletal & GPU Vertex Kinematics
+    const prevSin = Math.sin(this.gaitPhase);
     if (isMovingHoriz && !this.isDodging) {
       this.gaitPhase += moveStepDist * (this.isFlying ? 1.5 : 3.2);
       const s = Math.sin(this.gaitPhase);
       const c = Math.cos(this.gaitPhase);
 
+      // Bulky Knight Heavy-Impact Footsteps: camera shake (0.015) & dust puffs on heel strike
+      if (this.activeCharacterId === 'bulky_knight' && this.isGrounded && prevSin * s <= 0) {
+        this.cameraShakeIntensity = Math.max(this.cameraShakeIntensity, 0.025);
+        this.spawnParticles(this.playerPos.x, groundY + 0.1, this.playerPos.z, 0x94a3b8, 3);
+      }
+
+      this.hunter.controller.uniforms.uStridePhase.value = this.gaitPhase;
+      this.hunter.controller.uniforms.uStrideAmp.value = this.isFlying ? 0.2 : 0.85;
+      this.hunter.controller.uniforms.uSpineLean.value =
+        this.activeCharacterId === 'demon_hunter' ? 0.38 : 0.18;
+
       if (this.isFlying) {
         this.hunter.pelvis.position.y = 0.92 + Math.sin(this.gaitPhase * 0.6) * 0.04;
         this.hunter.torso.rotation.x = 0.36;
         this.hunter.torso.rotation.z = -this.turnLeanAngle * 0.85;
-        this.hunter.leftLeg.rotation.x = 0.28;
-        this.hunter.leftShin.rotation.x = 0.35;
-        this.hunter.rightLeg.rotation.x = 0.34;
-        this.hunter.rightShin.rotation.x = 0.42;
       } else {
-        // Grounded distance-synced sprint gait with articulated knee flexion & torso lean
         this.hunter.pelvis.position.y = 0.92 + Math.abs(c) * 0.055;
-        this.hunter.torso.rotation.x = 0.14;
+        this.hunter.torso.rotation.x = this.activeCharacterId === 'demon_hunter' ? 0.38 : 0.14;
         this.hunter.torso.rotation.z = -this.turnLeanAngle;
-        if (!this.isAttacking) {
-          this.hunter.torso.rotation.y = -s * 0.14;
-        }
 
-        // Left & Right Hip + Knee Flexion (knees only bend backward/positively in local space)
-        this.hunter.leftLeg.rotation.x = s * 0.68;
-        this.hunter.leftShin.rotation.x = Math.max(0.05, -c * 0.72);
-        this.hunter.leftFoot.rotation.x = -s * 0.25;
-
-        this.hunter.rightLeg.rotation.x = -s * 0.68;
-        this.hunter.rightShin.rotation.x = Math.max(0.05, c * 0.72);
-        this.hunter.rightFoot.rotation.x = s * 0.25;
-
-        if (!this.isAttacking) {
-          this.hunter.leftArm.rotation.x = -s * 0.48;
-          this.hunter.leftForearm.rotation.x = -0.45 - Math.max(0, s) * 0.35;
-          this.hunter.rightArm.rotation.x = s * 0.38;
-          this.hunter.rightForearm.rotation.x = -0.52 - Math.max(0, -s) * 0.28;
-        }
+        this.hunter.leftLeg.rotation.x = s * 0.85;
+        this.hunter.leftShin.rotation.x = Math.max(0.05, c * 1.1);
+        this.hunter.rightLeg.rotation.x = -s * 0.85;
+        this.hunter.rightShin.rotation.x = Math.max(0.05, -c * 1.1);
       }
-    } else if (!this.isDodging) {
-      // Idle breathing & Terrain Foot IK planting on uneven slopes
-      const breath = Math.sin(performance.now() * 0.003);
-      this.hunter.pelvis.position.y = THREE.MathUtils.damp(
-        this.hunter.pelvis.position.y,
-        0.92 + breath * 0.015,
+    } else {
+      this.hunter.controller.uniforms.uStrideAmp.value = THREE.MathUtils.damp(
+        this.hunter.controller.uniforms.uStrideAmp.value,
+        0,
         8,
         dt
       );
-      this.hunter.torso.rotation.x = THREE.MathUtils.damp(this.hunter.torso.rotation.x, 0, 8, dt);
-      this.hunter.torso.rotation.z = THREE.MathUtils.damp(this.hunter.torso.rotation.z, 0, 8, dt);
-      if (!this.isAttacking) {
-        this.hunter.torso.rotation.y = THREE.MathUtils.damp(this.hunter.torso.rotation.y, 0, 8, dt);
-      }
-
-      // Sample terrain height under Left & Right feet for slope Foot IK
-      const cosR = Math.cos(this.playerRotation);
-      const sinR = Math.sin(this.playerRotation);
-      const lFootWorldX = this.playerPos.x + 0.15 * cosR;
-      const lFootWorldZ = this.playerPos.z - 0.15 * sinR;
-      const rFootWorldX = this.playerPos.x - 0.15 * cosR;
-      const rFootWorldZ = this.playerPos.z + 0.15 * sinR;
-      const lDeltaY = Math.max(-0.18, Math.min(0.18, this.terrain.getHeight(lFootWorldX, lFootWorldZ) - groundY));
-      const rDeltaY = Math.max(-0.18, Math.min(0.18, this.terrain.getHeight(rFootWorldX, rFootWorldZ) - groundY));
-
-      const lKneeIK = this.isGrounded && lDeltaY > 0 ? lDeltaY * 2.2 : 0.06;
-      const rKneeIK = this.isGrounded && rDeltaY > 0 ? rDeltaY * 2.2 : 0.06;
-
-      this.hunter.leftLeg.rotation.x = THREE.MathUtils.damp(this.hunter.leftLeg.rotation.x, -lKneeIK * 0.5, 10, dt);
-      this.hunter.leftShin.rotation.x = THREE.MathUtils.damp(this.hunter.leftShin.rotation.x, lKneeIK, 10, dt);
-      this.hunter.leftFoot.rotation.x = THREE.MathUtils.damp(this.hunter.leftFoot.rotation.x, 0, 10, dt);
-
-      this.hunter.rightLeg.rotation.x = THREE.MathUtils.damp(this.hunter.rightLeg.rotation.x, -rKneeIK * 0.5, 10, dt);
-      this.hunter.rightShin.rotation.x = THREE.MathUtils.damp(this.hunter.rightShin.rotation.x, rKneeIK, 10, dt);
-      this.hunter.rightFoot.rotation.x = THREE.MathUtils.damp(this.hunter.rightFoot.rotation.x, 0, 10, dt);
-
-      if (!this.isAttacking) {
-        this.hunter.leftArm.rotation.x = THREE.MathUtils.damp(this.hunter.leftArm.rotation.x, breath * 0.04, 8, dt);
-        this.hunter.leftForearm.rotation.x = THREE.MathUtils.damp(this.hunter.leftForearm.rotation.x, -0.38, 8, dt);
-        this.hunter.rightArm.rotation.x = THREE.MathUtils.damp(this.hunter.rightArm.rotation.x, -0.12 + breath * 0.04, 8, dt);
-        this.hunter.rightForearm.rotation.x = THREE.MathUtils.damp(this.hunter.rightForearm.rotation.x, -0.52, 8, dt);
-      }
+      this.hunter.controller.uniforms.uSpineLean.value = THREE.MathUtils.damp(
+        this.hunter.controller.uniforms.uSpineLean.value,
+        0,
+        8,
+        dt
+      );
+      // Demon Hunter 4-second Head scan in idle
+      this.hunter.controller.uniforms.uHeadYaw.value = Math.sin(elapsedSec * 1.57) * 0.28;
     }
 
-    // Upper-Body Additive Animation when Eating Ration / Drinking Water (Free Fire / Monster Hunter style)
-    if (this.upperBodyActionTimer > 0) {
-      const p = Math.sin((1 - this.upperBodyActionTimer / 0.45) * Math.PI);
-      this.hunter.leftArm.rotation.x = -1.25 * p;
-      this.hunter.leftForearm.rotation.x = -1.1 * p;
-      this.hunter.head.rotation.x = 0.22 * p;
-    } else {
-      this.hunter.head.rotation.x = THREE.MathUtils.damp(this.hunter.head.rotation.x, 0, 8, dt);
+    // S.W.A.T. Operator Aim-Down-Sights (ADS) & Recoil Kinematics vs Bulky Knight Iron Bulwark
+    if (this.activeCharacterId === 'swat_operator') {
+      if (this.focusVisionActive) {
+        this.hunter.rightArm.rotation.x = -1.25 + this.recoilImpulse * 0.14;
+        this.hunter.leftArm.rotation.x = -1.1;
+        this.hunter.leftArm.rotation.y = 0.35;
+        this.hunter.head.rotation.z = 0.21; // 12 deg optic scope tilt
+      } else {
+        this.hunter.rightArm.rotation.x = -0.45 + this.recoilImpulse * 0.14;
+        this.hunter.head.rotation.z = 0;
+      }
+    } else if (this.activeCharacterId === 'bulky_knight' && this.focusVisionActive) {
+      // Iron Bulwark Shield Wall stance
+      this.hunter.leftArm.rotation.y = 0.85;
+      this.hunter.leftArm.rotation.x = -0.6;
     }
 
-    // Smooth Dorsal Flight Harness Wing Articulation (Folded Chevron on Ground vs Full Span in Flight)
+    // Smooth Dorsal Flight Wings Articulation
     if (this.hunter.wings && this.hunter.leftWing && this.hunter.rightWing) {
-      const targetScaleX = this.isFlying ? 1.05 : 0.38;
-      const targetScaleY = this.isFlying ? 1.05 : 0.45;
-      this.hunter.wings.scale.x = THREE.MathUtils.damp(this.hunter.wings.scale.x, targetScaleX, 8, dt);
-      this.hunter.wings.scale.y = THREE.MathUtils.damp(this.hunter.wings.scale.y, targetScaleY, 8, dt);
-      this.hunter.wings.scale.z = THREE.MathUtils.damp(this.hunter.wings.scale.z, targetScaleX, 8, dt);
+      const targetScale = this.isFlying ? 1.15 : 0.28;
+      this.hunter.wings.scale.x = THREE.MathUtils.damp(this.hunter.wings.scale.x, targetScale, 8, dt);
+      this.hunter.wings.scale.y = THREE.MathUtils.damp(this.hunter.wings.scale.y, targetScale, 8, dt);
+      this.hunter.wings.scale.z = THREE.MathUtils.damp(this.hunter.wings.scale.z, targetScale, 8, dt);
+      this.hunter.controller.uniforms.uWingFlap.value = this.isFlying ? 0.65 : 0;
 
       if (this.isFlying) {
-        const wingFlap = Math.sin(performance.now() * 0.009) * 0.34;
-        this.hunter.leftWing.rotation.z = THREE.MathUtils.damp(this.hunter.leftWing.rotation.z, 0, 8, dt);
-        this.hunter.rightWing.rotation.z = THREE.MathUtils.damp(this.hunter.rightWing.rotation.z, 0, 8, dt);
+        const wingFlap = Math.sin(elapsedSec * 9.0) * 0.38;
         this.hunter.leftWing.rotation.y = wingFlap;
         this.hunter.rightWing.rotation.y = -wingFlap;
-      } else {
-        this.hunter.leftWing.rotation.z = THREE.MathUtils.damp(this.hunter.leftWing.rotation.z, -0.75, 8, dt);
-        this.hunter.rightWing.rotation.z = THREE.MathUtils.damp(this.hunter.rightWing.rotation.z, 0.75, 8, dt);
-        this.hunter.leftWing.rotation.y = THREE.MathUtils.damp(this.hunter.leftWing.rotation.y, 0.18, 8, dt);
-        this.hunter.rightWing.rotation.y = THREE.MathUtils.damp(this.hunter.rightWing.rotation.y, -0.18, 8, dt);
       }
     }
 
-    // Scale Ground Contact Shadow based on height above ground
-    if (this.hunter.contactShadow) {
-      const heightAboveGround = Math.max(0, this.playerPos.y - groundY);
-      const shadowScale = Math.max(0.35, 1 - heightAboveGround * 0.04);
-      this.hunter.contactShadow.position.y = groundY - this.playerPos.y + 0.025;
-      this.hunter.contactShadow.scale.setScalar(shadowScale);
+    // Articulated Combat Activities (Twin Slash / Heavy Cleave / Demon Vault)
+    if (this.isAttacking) {
+      this.attackTimer -= dt;
+      const totalDur = this.isHeavyAttack ? 0.48 : 0.32;
+      const swingProgress = 1 - this.attackTimer / totalDur;
+
+      if (this.activeCharacterId === 'demon_hunter' && this.activeGesture === 'swipe_up') {
+        // 360 deg mid-air spin during Demon Vault
+        this.hunter.root.rotation.y = this.playerRotation + swingProgress * Math.PI * 2;
+      } else if (this.activeCharacterId === 'bulky_knight') {
+        // Bulky Knight -35 deg windup -> +65 deg Heavy Cleave
+        const cleaveAngle = swingProgress < 0.35 ? -0.61 * (swingProgress / 0.35) : 1.13 * ((swingProgress - 0.35) / 0.65);
+        this.hunter.controller.uniforms.uSpineTwist.value = cleaveAngle;
+        this.hunter.controller.uniforms.uAttackSwing.value = Math.sin(swingProgress * Math.PI);
+        if (swingProgress >= 0.35 && swingProgress <= 0.78) {
+          this.evaluateSpearHits(3.8, 1.5);
+        }
+      } else {
+        // Demon Hunter Twin Slash: 45 deg (0.78 rad) left then right spine twist
+        const twinTwist = Math.sin(swingProgress * Math.PI * 2) * 0.78;
+        this.hunter.controller.uniforms.uSpineTwist.value = twinTwist;
+        this.hunter.controller.uniforms.uAttackSwing.value = Math.sin(swingProgress * Math.PI);
+        if (swingProgress >= 0.22 && swingProgress <= 0.78) {
+          this.evaluateSpearHits();
+        }
+      }
+
+      if (this.attackTimer <= 0) {
+        this.isAttacking = false;
+        this.hunter.controller.uniforms.uSpineTwist.value = 0;
+        this.hunter.controller.uniforms.uAttackSwing.value = 0;
+      }
     }
 
-    // Animate Flowing Mastercraft Mithril Cape with Wind & Movement Physics
-    if (this.hunter.cape) {
-      const speedFactor = isMovingHoriz || this.isFlying ? 0.52 : 0.16;
-      this.hunter.cape.rotation.x =
-        speedFactor + Math.sin(performance.now() * 0.008) * (0.08 + this.currentAtmosphere.windSpeedMs * 0.01);
-      this.hunter.cape.rotation.z = -this.turnLeanAngle * 0.6;
-    }
+    this.hunter.controller.update(dt, elapsedSec);
 
-    // Biological Survival Homeostasis (Food kcal & Water mL metabolism + cellular HP regen)
+    // Biological Survival Homeostasis
     const biome = getTerrainBiome(this.playerPos.x, this.playerPos.z);
     const inFreshWater = (biome === 'river' || biome === 'springs') && this.isGrounded;
     this.playerStats = computeSurvivalMetabolism(
@@ -1867,164 +2609,188 @@ export class GameEngine {
       inFreshWater,
       dt
     );
+    this.playerStats.activeCharacter = this.activeCharacterId;
+    this.playerStats.isPilotingSpaceFighter = this.isPilotingSpaceFighter;
+    this.playerStats.isMountedOnBeast = Boolean(this.mountedBeastActor);
+    this.playerStats.timeOfDayHours = this.dayNightState.timeOfDayHours;
+    this.playerStats.isNight = this.dayNightState.isNight;
     this.playerStats.isFlying = this.isFlying;
     this.playerStats.altitude = Math.round(this.playerPos.y * 12.5);
-    this.playerStats.airSpeed = isMovingHoriz ? (this.isFlying ? 14.2 : 8.4) : 0;
+    this.playerStats.airSpeed = isMovingHoriz ? (this.isFlying ? 14.5 : charProfile.moveSpeed) : 0;
 
-    this.hunter.root.position.copy(this.playerPos);
-    this.hunter.root.rotation.y = this.playerRotation;
-
-    // Update Diegetic 3D Player Turf Ring position
-    this.playerDiegeticGroup.position.set(this.playerPos.x, groundY + 0.035, this.playerPos.z);
-
-    // Articulated 3-Phase Spear Attack (Windup -> Active Lunge Thrust -> Recovery)
-    if (this.isAttacking) {
-      this.attackTimer -= dt;
-      const totalDur = this.isHeavyAttack ? 0.48 : 0.34;
-      const swingProgress = 1 - this.attackTimer / totalDur;
-
-      if (swingProgress < 0.25) {
-        // Phase 1: Windup (draw shoulder back, cock elbow, coil torso)
-        const w = swingProgress / 0.25;
-        this.hunter.torso.rotation.y = -0.35 * w;
-        this.hunter.rightArm.rotation.x = 0.45 * w;
-        this.hunter.rightForearm.rotation.x = -0.85;
-        this.hunter.weaponMount.position.z = 0.04 - 0.18 * w;
-      } else if (swingProgress < 0.72) {
-        // Phase 2: Active Lunge Thrust (snap torso forward, drive shoulder & extend elbow + spear)
-        const a = Math.sin(((swingProgress - 0.25) / 0.47) * Math.PI);
-        this.hunter.torso.rotation.y = 0.42 * a;
-        this.hunter.torso.rotation.x = 0.24 * a;
-        this.hunter.rightArm.rotation.x = -1.15 * a;
-        this.hunter.rightForearm.rotation.x = -0.52 + 0.44 * a;
-        this.hunter.rightHand.rotation.x = 0.32 * a;
-        this.hunter.weaponMount.position.z = 0.04 + (this.isHeavyAttack ? 0.95 : 0.68) * a;
-        this.evaluateSpearHits();
-      } else {
-        // Phase 3: Recovery
-        const r = 1 - (swingProgress - 0.72) / 0.28;
-        this.hunter.torso.rotation.y = 0.15 * r;
-        this.hunter.rightArm.rotation.x = -0.3 * r;
-        this.hunter.rightForearm.rotation.x = -0.52;
-        this.hunter.rightHand.rotation.x = 0;
-        this.hunter.weaponMount.position.z = 0.04;
-      }
-
-      if (this.attackTimer <= 0) {
-        this.isAttacking = false;
-        this.hunter.torso.rotation.y = 0;
-        this.hunter.rightArm.rotation.x = -0.12;
-        this.hunter.rightForearm.rotation.x = -0.52;
-        this.hunter.rightHand.rotation.x = 0;
-        this.hunter.weaponMount.position.z = 0.04;
-      }
+    const yMountOffset = this.mountedBeastActor ? 2.4 : 0;
+    this.hunter.root.position.set(this.playerPos.x, this.playerPos.y + yMountOffset, this.playerPos.z);
+    if (!this.isAttacking || this.activeGesture !== 'swipe_up') {
+      this.hunter.root.rotation.y = this.playerRotation;
     }
 
+    // Update active hero slot in roster
+    const activeSlot = this.heroRoster.get(this.activeCharacterId);
+    if (activeSlot) {
+      activeSlot.pos.copy(this.playerPos);
+      activeSlot.rotation = this.playerRotation;
+    }
+
+    this.playerDiegeticGroup.position.set(this.playerPos.x, groundY + 0.035, this.playerPos.z);
     this.callbacks.onStatsChange(this.playerStats);
   }
 
-  private evaluateSpearHits() {
+  private evaluateSpearHits(customReach?: number, customMult = 1.0) {
     const weapon = WEAPON_REGISTRY[this.equippedWeapon];
-    const tipX = this.playerPos.x + Math.sin(this.playerRotation) * weapon.reach;
-    const tipZ = this.playerPos.z + Math.cos(this.playerRotation) * weapon.reach;
+    const reach = customReach ?? weapon.reach;
+    const tipX = this.playerPos.x + Math.sin(this.playerRotation) * reach;
+    const tipZ = this.playerPos.z + Math.cos(this.playerRotation) * reach;
 
     for (const actor of this.beasts) {
-      if (actor.state.hp <= 0 || actor.hitThisSwing) continue;
+      if (actor.state.hp <= 0 || actor.hitThisSwing || actor === this.mountedBeastActor) continue;
       const distXZ = Math.hypot(tipX - actor.state.x, tipZ - actor.state.z);
       const distY = Math.abs(this.playerPos.y - actor.state.y);
-      const hitRadius = actor.state.isFlyingBeast ? 5.8 : 4.4;
+      const hitRadius = actor.state.isFlyingBeast ? 5.8 : 4.6;
       if (distXZ > hitRadius || distY > 7.5) continue;
 
       actor.hitThisSwing = true;
+      this.applyHitToBeast(actor, tipX, tipZ, weapon.baseDamage * customMult, this.isHeavyAttack);
+    }
+  }
 
-      // Check Weak Points
-      let wpMult = 1.0;
-      let hitWpId: string | null = null;
-      for (const wp of actor.state.weakPoints) {
-        if (wp.broken) continue;
-        const cosR = Math.cos(actor.state.rotation);
-        const sinR = Math.sin(actor.state.rotation);
-        const wpWorldX = actor.state.x + wp.localOffset.x * cosR + wp.localOffset.z * sinR;
-        const wpWorldZ = actor.state.z - wp.localOffset.x * sinR + wp.localOffset.z * cosR;
-        if (Math.hypot(tipX - wpWorldX, tipZ - wpWorldZ) <= wp.radius + 1.4) {
-          wpMult = wp.damageMultiplier;
-          hitWpId = wp.id;
-          break;
-        }
+  private applyHitToBeast(
+    actor: ActiveBeastActor,
+    hitX: number,
+    hitZ: number,
+    baseDamage: number,
+    isHeavy: boolean
+  ) {
+    const weapon = WEAPON_REGISTRY[this.equippedWeapon];
+    let wpMult = 1.0;
+    let hitWpId: string | null = null;
+
+    for (const wp of actor.state.weakPoints) {
+      if (wp.broken) continue;
+      const cosR = Math.cos(actor.state.rotation);
+      const sinR = Math.sin(actor.state.rotation);
+      const wpWorldX = actor.state.x + wp.localOffset.x * cosR + wp.localOffset.z * sinR;
+      const wpWorldZ = actor.state.z - wp.localOffset.x * sinR + wp.localOffset.z * cosR;
+      if (Math.hypot(hitX - wpWorldX, hitZ - wpWorldZ) <= wp.radius + 1.6) {
+        wpMult = wp.damageMultiplier;
+        hitWpId = wp.id;
+        break;
       }
+    }
 
-      const dmgRes = calculateDamage({
-        weaponDamage: weapon.baseDamage,
-        isHeavyAttack: this.isHeavyAttack,
-        heavyMultiplier: weapon.heavyMultiplier,
-        weakPointMultiplier: wpMult,
-        isEnraged: actor.state.enraged,
-        isStaggered: actor.state.aiState === 'staggered',
-        critRoll: Math.random(),
-        critChance: weapon.critChance,
-        difficulty: 'hunter',
-      });
+    // Armor Dinosaur (brontoshell / caldera_titan) Directional Armor Deflection (0.2x frontal vs 1.8x Core flank)
+    if (actor.state.species === 'brontoshell' || actor.state.species === 'caldera_titan') {
+      const toAttackerAngle = Math.atan2(this.playerPos.x - actor.state.x, this.playerPos.z - actor.state.z);
+      let angleDiff = Math.abs(toAttackerAngle - actor.state.rotation);
+      while (angleDiff > Math.PI) angleDiff = Math.abs(angleDiff - Math.PI * 2);
+      if (angleDiff < 0.85 && !isHeavy) {
+        wpMult = 0.2; // Dorsal / Frontal Carapace Deflection!
+        this.spawnParticles(hitX, actor.state.y + 1.5, hitZ, 0xe2e8f0, 10);
+      } else if (angleDiff >= 0.85) {
+        wpMult = Math.max(wpMult, 1.8); // Exposed Flank / Underbelly Core!
+      }
+    }
 
-      actor.state.hp = Math.max(0, actor.state.hp - dmgRes.finalDamage);
-      this.cameraShakeIntensity = Math.max(this.cameraShakeIntensity, this.isHeavyAttack ? 0.24 : 0.12);
-      sound.playHitImpact(dmgRes.isWeakPointHit, dmgRes.isCrit);
-      this.callbacks.onHitMarker?.(dmgRes.finalDamage, dmgRes.isCrit, dmgRes.isWeakPointHit);
-      this.spawnParticles(
-        actor.state.x,
-        actor.state.y + 1.6,
-        actor.state.z,
-        dmgRes.isWeakPointHit ? 0xfbbf24 : 0xef4444,
-        12
+    const dmgRes = calculateDamage({
+      weaponDamage: baseDamage,
+      isHeavyAttack: isHeavy,
+      heavyMultiplier: weapon.heavyMultiplier,
+      weakPointMultiplier: wpMult,
+      isEnraged: actor.state.enraged,
+      isStaggered: actor.state.aiState === 'staggered',
+      critRoll: Math.random(),
+      critChance: weapon.critChance,
+      difficulty: 'hunter',
+    });
+
+    actor.state.hp = Math.max(0, actor.state.hp - dmgRes.finalDamage);
+    this.cameraShakeIntensity = Math.max(this.cameraShakeIntensity, isHeavy ? 0.24 : 0.12);
+    sound.playHitImpact(dmgRes.isWeakPointHit, dmgRes.isCrit);
+    this.callbacks.onHitMarker?.(dmgRes.finalDamage, dmgRes.isCrit, dmgRes.isWeakPointHit);
+    this.spawnParticles(
+      actor.state.x,
+      actor.state.y + 1.6,
+      actor.state.z,
+      dmgRes.isWeakPointHit ? 0xfbbf24 : 0xef4444,
+      12
+    );
+
+    // Jason T (snapjaw / raptor): Head-shot during lunge interrupts pounce and triggers STUNNED stagger!
+    if (
+      (actor.state.species === 'snapjaw' || actor.state.species === 'raptor') &&
+      (actor.state.aiState === 'telegraph_charge' || actor.state.aiState === 'attack_charge') &&
+      (hitWpId?.includes('head') || dmgRes.isWeakPointHit)
+    ) {
+      actor.state.aiState = 'staggered';
+      actor.state.stateTimer = 4.2;
+      sound.playPartBreak();
+      this.callbacks.onNotification(
+        `Headshot Interrupt! ${actor.state.name} Lunge Interrupted & Stunned!`,
+        'loot'
       );
+    }
 
-      if (hitWpId) {
-        const idx = actor.state.weakPoints.findIndex((w) => w.id === hitWpId);
-        if (idx >= 0) {
-          const res = applyWeakPointDamage(actor.state.weakPoints[idx], dmgRes.finalDamage);
-          actor.state.weakPoints[idx] = res.updated;
-          if (res.justBroke) {
-            actor.state.aiState = 'staggered';
-            actor.state.stateTimer = 4.2;
-            sound.playPartBreak();
-            const bonusMat = res.updated.bonusDropMaterialId;
-            this.inventoryMaterials[bonusMat] = (this.inventoryMaterials[bonusMat] || 0) + 1;
-            this.callbacks.onNotification(
-              `Part Broken: ${res.updated.name}! Beast Grounded & Staggered! (+1 ${bonusMat.replace('_', ' ')})`,
-              'loot'
-            );
-          }
-        }
-      }
-
-      if (!actor.state.enraged && actor.state.hp > 0 && actor.state.hp < actor.state.maxHp * 0.45) {
-        actor.state.enraged = true;
-        actor.state.aiState = 'enraged_roar';
-        actor.state.stateTimer = 1.6;
-        sound.playBeastRoar(actor.state.species);
-        this.cameraShakeIntensity = 0.45;
-        this.callbacks.onNotification(`${actor.state.name} is ENRAGED!`, 'danger');
-      }
-
-      if (actor.state.hp <= 0) {
-        actor.state.aiState = 'dead';
-        const gy = this.terrain.getHeight(actor.state.x, actor.state.z);
-        actor.state.y = gy;
-        actor.rig.root.rotation.z = Math.PI / 2.2;
-        actor.rig.root.position.y = gy + 0.5;
-        if (!this.beastsHunted.includes(actor.state.species)) {
-          this.beastsHunted.push(actor.state.species);
-        }
-        this.upgradeKnowledge(actor.state.species, 'mastered');
-        this.advanceQuestOnKill(actor.state.species);
-        this.advanceAdventureProgress(actor.state.species, 'kill');
+    // Dragon Boss (sky_dragon): Dealing 80+ damage to Wing hitboxes forces GROUNDED crash-land!
+    if (actor.state.species === 'sky_dragon') {
+      actor.wingDamageAccumulated += dmgRes.finalDamage;
+      if (actor.wingDamageAccumulated >= 80 && actor.state.aiState !== 'staggered') {
+        actor.wingDamageAccumulated = 0;
+        actor.state.aiState = 'staggered';
+        actor.state.stateTimer = 5.5;
+        sound.playPartBreak();
         this.callbacks.onNotification(
-          `Slain: ${actor.state.name}! Approach and press [E] to Carve materials & rations.`,
+          `Dragon Wings Shredded (80+ Dmg)! ${actor.state.name} Forced to CRASH-LAND (GROUNDED)!`,
           'loot'
         );
       }
-
-      this.callbacks.onTargetChange(actor.state);
     }
+
+    if (hitWpId) {
+      const idx = actor.state.weakPoints.findIndex((w) => w.id === hitWpId);
+      if (idx >= 0) {
+        const res = applyWeakPointDamage(actor.state.weakPoints[idx], dmgRes.finalDamage);
+        actor.state.weakPoints[idx] = res.updated;
+        if (res.justBroke) {
+          actor.state.aiState = 'staggered';
+          actor.state.stateTimer = 4.5;
+          sound.playPartBreak();
+          const bonusMat = res.updated.bonusDropMaterialId;
+          this.inventoryMaterials[bonusMat] = (this.inventoryMaterials[bonusMat] || 0) + 1;
+          this.callbacks.onNotification(
+            `Part Broken: ${res.updated.name}! Beast Grounded & Staggered! (+1 ${bonusMat.replace('_', ' ')})`,
+            'loot'
+          );
+        }
+      }
+    }
+
+    if (!actor.state.enraged && actor.state.hp > 0 && actor.state.hp < actor.state.maxHp * 0.45) {
+      actor.state.enraged = true;
+      actor.state.aiState = 'enraged_roar';
+      actor.state.stateTimer = 1.6;
+      sound.playBeastRoar(actor.state.species);
+      this.cameraShakeIntensity = 0.45;
+      this.callbacks.onNotification(`${actor.state.name} is ENRAGED!`, 'danger');
+    }
+
+    if (actor.state.hp <= 0) {
+      actor.state.aiState = 'dead';
+      const gy = this.terrain.getHeight(actor.state.x, actor.state.z);
+      actor.state.y = gy;
+      actor.rig.root.rotation.z = Math.PI / 2.2;
+      actor.rig.root.position.y = gy + 0.5;
+      if (!this.beastsHunted.includes(actor.state.species)) {
+        this.beastsHunted.push(actor.state.species);
+      }
+      this.upgradeKnowledge(actor.state.species, 'mastered');
+      this.advanceQuestOnKill(actor.state.species);
+      this.advanceAdventureProgress(actor.state.species, 'kill');
+      this.callbacks.onNotification(
+        `Slain: ${actor.state.name}! Approach and press [E] to Carve materials & rations.`,
+        'loot'
+      );
+    }
+
+    this.callbacks.onTargetChange(actor.state);
   }
 
   private advanceQuestOnKill(species: BeastSpecies) {
@@ -2040,11 +2806,20 @@ export class GameEngine {
     this.callbacks.onQuestUpdate(this.currentQuestIndex);
   }
 
-  private updateBeasts(dt: number) {
+  private updateBeasts(dt: number, elapsedSec: number) {
     let closestBeast: BeastState | null = null;
-    let closestDist = 30; // Only lock onto beasts that are genuinely within visual/combat range (<= 30m)
+    let closestDist = 36;
+    const nightAggroMult = this.dayNightState.beastAggressionMultiplier;
+    const nightRadiusMult = this.dayNightState.beastAggroRadiusMultiplier;
 
     for (const actor of this.beasts) {
+      if (actor === this.mountedBeastActor) {
+        actor.rig.controller.uniforms.uStridePhase.value = this.gaitPhase;
+        actor.rig.controller.uniforms.uStrideAmp.value = 0.65;
+        actor.rig.controller.update(dt, elapsedSec);
+        continue;
+      }
+
       const s = actor.state;
       if (s.hp <= 0) {
         const dDead = Math.hypot(this.playerPos.x - s.x, this.playerPos.z - s.z);
@@ -2058,16 +2833,29 @@ export class GameEngine {
         closestBeast = s;
       }
 
+      // Deposit dynamic 3D footprints for Focus Vision Tracking Trail!
+      actor.footprintTimer -= dt;
+      if (actor.footprintTimer <= 0 && !s.isFlyingBeast) {
+        actor.footprintTimer = 0.65;
+        const gy = this.terrain.getHeight(s.x, s.z);
+        this.trailSystem.addFootprint(s.x, gy, s.z, s.rotation, s.species);
+      }
+
       // Check snare traps
       for (const trap of this.traps) {
-        if (trap.active && Math.hypot(s.x - trap.x, s.z - trap.z) < 2.5) {
+        if (trap.active && Math.hypot(s.x - trap.x, s.z - trap.z) < 2.6) {
           trap.active = false;
           trap.mesh.visible = false;
-          s.snaredTimer = 4.5;
+          s.snaredTimer = 5.5;
           s.aiState = 'staggered';
-          s.stateTimer = 4.5;
+          s.stateTimer = 5.5;
           sound.playPartBreak();
-          this.callbacks.onNotification(`${s.name} caught in Sinew Snare Trap!`, 'loot');
+          this.callbacks.onNotification(
+            `${s.name} caught in Trap! ${
+              s.species === 'brontoshell' ? 'Press [E] to Tame & Mount Armor Dinosaur!' : 'Weak Points Exposed!'
+            }`,
+            'loot'
+          );
         }
       }
 
@@ -2075,7 +2863,6 @@ export class GameEngine {
         s.snaredTimer -= dt;
       }
 
-      // AI State Machine
       s.stateTimer -= dt;
       const toPlayerX = this.playerPos.x - s.x;
       const toPlayerZ = this.playerPos.z - s.z;
@@ -2086,7 +2873,7 @@ export class GameEngine {
           s.aiState = 'chase';
         }
       } else if (s.aiState === 'patrol') {
-        const orbitSpeed = s.isFlyingBeast ? 0.55 : 0.42;
+        const orbitSpeed = (s.isFlyingBeast ? 0.55 : 0.42) * nightAggroMult;
         const orbitRadius = s.isFlyingBeast ? 14 : 6.5;
         actor.patrolAngle += dt * orbitSpeed;
         const targetX = actor.homeX + Math.cos(actor.patrolAngle) * orbitRadius;
@@ -2094,61 +2881,70 @@ export class GameEngine {
         const dx = targetX - s.x;
         const dz = targetZ - s.z;
         s.rotation = stepAngleShortestArc(s.rotation, Math.atan2(dx, dz), dt * 4);
-        const patrolSpeed = s.isFlyingBeast ? 6.8 : 2.2;
+        const patrolSpeed = (s.isFlyingBeast ? 6.8 : 2.2) * nightAggroMult;
         s.x += Math.sin(s.rotation) * patrolSpeed * dt;
         s.z += Math.cos(s.rotation) * patrolSpeed * dt;
 
-        // Only aggro when player approaches within direct combat proximity (16m ground, 20m flying)
-        // and never aggro while the player is resting in the Campfire Haven safe radius (< 6m from 0, 28)
         const playerInCampSafeZone = Math.hypot(this.playerPos.x - 0, this.playerPos.z - 28) < 6.2;
-        if (!playerInCampSafeZone && distToPlayer < (s.isFlyingBeast ? 20 : 16)) {
+        const aggroRadius = (s.isFlyingBeast ? 20 : 16) * nightRadiusMult;
+        if (!playerInCampSafeZone && distToPlayer < aggroRadius) {
           s.aiState = 'chase';
           this.upgradeKnowledge(s.species, 'sighted');
           sound.playBeastRoar(s.species);
         }
       } else if (s.aiState === 'chase') {
         s.rotation = stepAngleShortestArc(s.rotation, angleToPlayer, dt * 6);
-        const moveSpeed = s.isFlyingBeast ? (s.enraged ? 9.8 : 7.8) : s.enraged ? 6.2 : 4.6;
-        if (distToPlayer > 4.2) {
+        const moveSpeed =
+          (s.isFlyingBeast ? (s.enraged ? 9.8 : 7.8) : s.enraged ? 6.2 : 4.6) * nightAggroMult;
+        if (distToPlayer > 4.4) {
           s.x += Math.sin(s.rotation) * moveSpeed * dt;
           s.z += Math.cos(s.rotation) * moveSpeed * dt;
         } else {
           s.aiState = 'telegraph_charge';
-          s.stateTimer = s.enraged ? 0.75 : 1.05;
+          s.stateTimer = s.enraged ? 0.65 : 0.95;
           actor.chargeDirX = Math.sin(angleToPlayer);
           actor.chargeDirZ = Math.cos(angleToPlayer);
         }
-        if (distToPlayer > 34) {
+        if (distToPlayer > 38 * nightRadiusMult) {
           s.aiState = 'patrol';
         }
       } else if (s.aiState === 'telegraph_charge') {
         actor.rig.head.rotation.x = -0.35;
-        actor.rig.jaw.rotation.x = 0.45;
+        actor.rig.jaw.rotation.x = 0.7; // 40 deg jaw open for fire breath / bite telegraph
+        actor.rig.controller.uniforms.uJawOpen.value = 0.7;
         if (s.stateTimer <= 0) {
           actor.rig.head.rotation.x = 0;
           actor.rig.jaw.rotation.x = 0;
+          actor.rig.controller.uniforms.uJawOpen.value = 0;
           s.aiState = 'attack_charge';
           s.stateTimer = 0.65;
         }
       } else if (s.aiState === 'attack_charge') {
-        const dashSpeed = s.enraged ? 15.5 : 12.2;
+        const dashSpeed =
+          (s.species === 'snapjaw' ? 16.0 : s.species === 'brontoshell' ? 14.0 : 12.5) *
+          (s.enraged ? 1.2 : 1.0) *
+          nightAggroMult;
         s.x += actor.chargeDirX * dashSpeed * dt;
         s.z += actor.chargeDirZ * dashSpeed * dt;
 
-        // Check player hit
         if (
-          Math.hypot(this.playerPos.x - s.x, this.playerPos.z - s.z) < 3.1 &&
+          Math.hypot(this.playerPos.x - s.x, this.playerPos.z - s.z) < 3.2 &&
           Math.abs(this.playerPos.y - s.y) < 4.5
         ) {
-          const elapsedDodge = 0.46 - this.dodgeTimer;
-          if (!this.isDodging || !isDodgeInvulnerable(elapsedDodge, 0.46)) {
+          const elapsedDodge = 0.45 - this.dodgeTimer;
+          if (!this.isDodging || !isDodgeInvulnerable(elapsedDodge, 0.45)) {
             const rawDmg =
               s.species === 'caldera_titan' || s.species === 'sky_dragon'
                 ? 36
                 : s.species === 'frostfang'
                 ? 30
                 : 22;
-            const taken = calculatePlayerDamageTaken(rawDmg, this.playerStats.defense, 'hunter');
+            let taken = calculatePlayerDamageTaken(rawDmg, this.playerStats.defense, 'hunter');
+            // Bulky Knight Iron Bulwark reduces incoming damage by 80%!
+            if (this.activeCharacterId === 'bulky_knight' && this.focusVisionActive) {
+              taken = Math.max(1, Math.round(taken * 0.2));
+              this.spawnParticles(this.playerPos.x, this.playerPos.y + 1.2, this.playerPos.z, 0x38bdf8, 8);
+            }
             this.playerStats.hp = Math.max(0, this.playerStats.hp - taken);
             this.cameraShakeIntensity = 0.35;
             sound.playPlayerHurt();
@@ -2167,28 +2963,50 @@ export class GameEngine {
       }
 
       const groundY = this.terrain.getHeight(s.x, s.z);
-      const animT = performance.now() * 0.008;
+      const animT = elapsedSec * 5.0;
+
+      // Update Beast GPU & Node Skeletal Kinematics
+      actor.rig.controller.uniforms.uStridePhase.value = animT;
+      actor.rig.controller.uniforms.uStrideAmp.value = s.aiState === 'staggered' ? 0.05 : 0.55;
+      actor.rig.controller.uniforms.uTailWave.value = 0.45;
+      actor.rig.controller.uniforms.uSpineLean.value =
+        s.species === 'snapjaw' || s.species === 'raptor' ? 0.25 : 0.08;
+      actor.rig.controller.uniforms.uWingFlap.value =
+        s.isFlyingBeast && s.aiState !== 'staggered'
+          ? 0.75
+          : (s.species === 'thunderhorn' || s.species === 'frostfang') && s.aiState === 'attack_charge'
+          ? 0.95
+          : 0.0;
+      actor.rig.controller.update(dt, elapsedSec);
 
       if (s.isFlyingBeast) {
         if (s.aiState === 'staggered') {
-          s.y = groundY + 0.5;
+          s.y = groundY + 0.4; // Grounded crash-land state!
         } else if (s.aiState === 'chase' || s.aiState === 'attack_charge' || s.aiState === 'telegraph_charge') {
           const targetY = Math.max(groundY + 2.2, this.playerPos.y + 1.2);
           s.y += (targetY - s.y) * Math.min(1, dt * 3.5);
         } else {
-          const cruiseY = groundY + (s.flightAltitude ?? 8.5) + Math.sin(animT * 0.9) * 1.4;
+          const cruiseY = groundY + (s.flightAltitude ?? 8.5) + Math.sin(animT * 0.4) * 1.4;
           s.y += (cruiseY - s.y) * Math.min(1, dt * 2.5);
         }
 
         if (actor.rig.legs.length >= 2) {
-          const flap = Math.sin(animT * 1.8) * 0.55;
+          const flap = Math.sin(animT * 1.2) * 0.55;
           actor.rig.legs[0].rotation.z = flap;
           actor.rig.legs[1].rotation.z = -flap;
         }
       } else {
-        s.y = groundY;
+        // Jason T Ambush Pounce vertical arc
+        if ((s.species === 'snapjaw' || s.species === 'raptor') && s.aiState === 'attack_charge') {
+          s.y = groundY + Math.sin((s.stateTimer / 0.65) * Math.PI) * 1.8;
+        } else {
+          s.y = groundY;
+        }
+
+        // Triceratops Beetle 6-legged tripod gait vs Quadruped gait
         actor.rig.legs.forEach((leg, idx) => {
-          leg.rotation.x = Math.sin(animT + idx * Math.PI) * 0.32;
+          const tripodPhase = idx % 2 === 0 ? 0 : Math.PI;
+          leg.rotation.x = Math.sin(animT * 1.5 + tripodPhase) * 0.35;
         });
       }
 
@@ -2196,6 +3014,20 @@ export class GameEngine {
       actor.rig.root.rotation.y = s.rotation;
       actor.rig.tail.rotation.y = Math.sin(animT) * 0.25;
     }
+
+    // Update Focus Vision 3D Tracking Trail Effect!
+    let trailTargetVec: THREE.Vector3 | null = null;
+    if (closestBeast && closestBeast.hp > 0) {
+      this.scratchTargetVec.set(closestBeast.x, closestBeast.y, closestBeast.z);
+      trailTargetVec = this.scratchTargetVec;
+    } else {
+      const alive = this.beasts.find((b) => b.state.hp > 0);
+      if (alive) {
+        this.scratchTargetVec.set(alive.state.x, alive.state.y, alive.state.z);
+        trailTargetVec = this.scratchTargetVec;
+      }
+    }
+    this.trailSystem.update(dt, this.focusVisionActive, trailTargetVec, this.playerPos, 1.0);
 
     // Update Diegetic 3D Beast Threat Ring & Player Turf Directional Arrow
     if (closestBeast && closestBeast.hp > 0) {
@@ -2230,22 +3062,57 @@ export class GameEngine {
       const p = this.projectiles[i];
       p.age += dt;
       if (!p.landed) {
-        p.vy -= 18 * dt;
+        if (p.kind === 'lure_stone' || p.kind === 'brass_casing') {
+          p.vy -= 18 * dt;
+        }
         p.mesh.position.x += p.vx * dt;
         p.mesh.position.y += p.vy * dt;
         p.mesh.position.z += p.vz * dt;
+        if (p.kind === 'brass_casing') {
+          p.mesh.rotation.x += dt * 18;
+          p.mesh.rotation.z += dt * 14;
+        }
+
+        // Check Rifle Bullet / Space Fighter Plasma Bolt impact on Beasts
+        if (p.kind === 'rifle_bullet' || p.kind === 'plasma_bolt') {
+          for (const actor of this.beasts) {
+            if (actor.state.hp <= 0) continue;
+            const dXZ = Math.hypot(p.mesh.position.x - actor.state.x, p.mesh.position.z - actor.state.z);
+            const dY = Math.abs(p.mesh.position.y - (actor.state.y + 1.5));
+            if (dXZ < 3.6 && dY < 4.5) {
+              this.applyHitToBeast(
+                actor,
+                p.mesh.position.x,
+                p.mesh.position.z,
+                p.damage,
+                p.kind === 'plasma_bolt'
+              );
+              this.scene.remove(p.mesh);
+              this.projectiles.splice(i, 1);
+              p.landed = true;
+              break;
+            }
+          }
+          if (p.landed) continue;
+        }
+
         const gy = this.terrain.getHeight(p.mesh.position.x, p.mesh.position.z);
         if (p.mesh.position.y <= gy + 0.15) {
           p.mesh.position.y = gy + 0.15;
           p.landed = true;
-          for (const b of this.beasts) {
-            if (b.state.hp > 0 && Math.hypot(b.state.x - p.mesh.position.x, b.state.z - p.mesh.position.z) < 22) {
-              b.homeX = p.mesh.position.x;
-              b.homeZ = p.mesh.position.z;
+          if (p.kind === 'lure_stone') {
+            for (const b of this.beasts) {
+              if (b.state.hp > 0 && Math.hypot(b.state.x - p.mesh.position.x, b.state.z - p.mesh.position.z) < 22) {
+                b.homeX = p.mesh.position.x;
+                b.homeZ = p.mesh.position.z;
+              }
             }
           }
         }
-      } else if (p.age > 4) {
+      }
+
+      const maxAge = p.kind === 'lure_stone' ? 4.0 : 0.85;
+      if (p.age > maxAge) {
         this.scene.remove(p.mesh);
         this.projectiles.splice(i, 1);
       }
@@ -2266,7 +3133,20 @@ export class GameEngine {
   }
 
   private updateCamera(dt: number) {
-    const dist = this.isFlying ? 9.4 : this.cameraDistance;
+    // GTA V Sky-Camera Zoom Transition when swapping characters
+    if (this.gtaSkyCamTimer > 0) {
+      this.gtaSkyCamTimer = Math.max(0, this.gtaSkyCamTimer - dt);
+      const progress = 1 - this.gtaSkyCamTimer / this.gtaSkyCamDuration;
+      const panX = THREE.MathUtils.lerp(this.gtaSkyCamFrom.x, this.gtaSkyCamTo.x, progress);
+      const panZ = THREE.MathUtils.lerp(this.gtaSkyCamFrom.z, this.gtaSkyCamTo.z, progress);
+      const skyArcY = Math.sin(progress * Math.PI) * 45;
+      const baseCamY = this.playerPos.y + 4.5 + skyArcY;
+      this.camera.position.set(panX, baseCamY, panZ - 6.5);
+      this.camera.lookAt(panX, this.playerPos.y + 1.2, panZ);
+      return;
+    }
+
+    const dist = this.isPilotingSpaceFighter ? 11.5 : this.isFlying ? 9.4 : this.cameraDistance;
     const camX =
       this.playerPos.x - Math.sin(this.cameraYaw) * Math.cos(this.cameraPitch) * dist;
     const camZ =
@@ -2285,6 +3165,34 @@ export class GameEngine {
   }
 
   private checkInteractPrompts() {
+    if (this.isPilotingSpaceFighter) {
+      this.callbacks.onInteractPrompt('Piloting Space Fighter · Press [E] to Land & Disembark');
+      return;
+    }
+    if (this.mountedBeastActor) {
+      this.callbacks.onInteractPrompt('Riding Tamed Armor Dinosaur · Press [E] to Dismount');
+      return;
+    }
+    if (
+      Math.hypot(
+        this.playerPos.x - this.spaceFighterPos.x,
+        this.playerPos.z - this.spaceFighterPos.z
+      ) < 4.8
+    ) {
+      this.callbacks.onInteractPrompt('Press [E] or Tap to Board 6-DOF Space Fighter');
+      return;
+    }
+    for (const actor of this.beasts) {
+      if (
+        actor.state.hp > 0 &&
+        actor.state.species === 'brontoshell' &&
+        (actor.state.snaredTimer > 0 || actor.state.aiState === 'staggered') &&
+        Math.hypot(this.playerPos.x - actor.state.x, this.playerPos.z - actor.state.z) < 6.0
+      ) {
+        this.callbacks.onInteractPrompt('Press [E] or Tap to Tame & Mount Armor Dinosaur!');
+        return;
+      }
+    }
     for (const nest of this.eggNests) {
       if (
         !nest.data.collected &&
@@ -2325,7 +3233,11 @@ export class GameEngine {
         !c.data.discovered &&
         Math.hypot(this.playerPos.x - c.data.x, this.playerPos.z - c.data.z) < 4.2
       ) {
-        this.callbacks.onInteractPrompt('Press [E] or Tap to Inspect Beast Tracks');
+        this.callbacks.onInteractPrompt(
+          `Press [E] or Tap to Harvest ${
+            this.dayNightState.isNight ? 'Luminous Night-Spores' : 'Sun-Herbs'
+          } & Inspect Tracks`
+        );
         return;
       }
     }
@@ -2345,6 +3257,7 @@ export class GameEngine {
     cancelAnimationFrame(this.animFrameId);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('blur', this.onWindowBlur);
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown);
     window.removeEventListener('pointermove', this.onPointerMove);
     window.removeEventListener('pointerup', this.onPointerUp);

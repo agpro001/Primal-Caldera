@@ -18,6 +18,7 @@ import type {
   SaveData,
   AtmosphericScienceState,
   AdventureMission,
+  PlayableCharacterId,
 } from './types/game.ts';
 import { GameEngine } from './game/engine/gameEngine.ts';
 import {
@@ -53,6 +54,9 @@ export function App() {
   const [equippedWeapon, setEquippedWeapon] = useState<WeaponId>(saveData.inventory.equippedWeapon);
   const [equippedArmor, setEquippedArmor] = useState<ArmorId>(saveData.inventory.equippedArmor);
   const [currentWeather, setCurrentWeather] = useState<WeatherType>('clear');
+  const [activeCharacterId, setActiveCharacterId] = useState<PlayableCharacterId>('demon_hunter');
+  const [timeOfDayHours, setTimeOfDayHours] = useState<number>(10.5);
+  const [dayPhase, setDayPhase] = useState<'dawn' | 'day' | 'dusk' | 'night'>('day');
   const [atmosphericScience, setAtmosphericScience] = useState<AtmosphericScienceState>(() =>
     computeAtmosphericPhysics(0, 2.5, 28, 'jungle', 'clear', 0)
   );
@@ -104,7 +108,12 @@ export function App() {
 
     const initialSave = loadSavedGame();
     const engine = new GameEngine(containerRef.current, initialSave, {
-      onStatsChange: (newStats) => setStats({ ...newStats }),
+      onStatsChange: (newStats) => {
+        setStats({ ...newStats });
+        if (newStats.activeCharacter) {
+          setActiveCharacterId(newStats.activeCharacter);
+        }
+      },
       onTargetChange: (beast) => setTargetBeast(beast ? { ...beast } : null),
       onNotification: (message, type) => {
         setNotification({ message, type });
@@ -161,6 +170,10 @@ export function App() {
           () => setHitMarker(null),
           450
         );
+      },
+      onDayNightChange: (dn) => {
+        setTimeOfDayHours(dn.timeOfDayHours);
+        setDayPhase(dn.phase);
       },
     });
 
@@ -295,7 +308,16 @@ export function App() {
           notification={notification}
           focusVisionActive={focusVisionActive}
           hitMarker={hitMarker}
-          onAttack={() => engineRef.current?.startSpearAttack()}
+          activeCharacterId={activeCharacterId}
+          timeOfDayHours={timeOfDayHours}
+          dayPhase={dayPhase}
+          onSwapCharacter={(charId) => {
+            engineRef.current?.switchCharacter(charId);
+            setActiveCharacterId(charId);
+          }}
+          onToggleDayNight={() => engineRef.current?.advanceTimeOfDay(6)}
+          onStrikeGesture={(gesture) => engineRef.current?.performStrike(gesture)}
+          onAttack={() => engineRef.current?.performStrike('tap')}
           onChargeRelease={() => engineRef.current?.releaseHeavyThrust()}
           onJump={() => engineRef.current?.jumpPlayer()}
           onToggleFlight={() => engineRef.current?.toggleFlightMode()}

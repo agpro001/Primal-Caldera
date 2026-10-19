@@ -13,7 +13,9 @@ import {
   buildSnowMountainPeakModel,
   buildRiverBridgeModel,
   buildRiverFishModel,
-} from './proceduralModels.ts';
+  buildForestBiomeModel,
+  createSculptedOrganicGeometry,
+} from '../engine/assetLoaderAndRigging.ts';
 
 export interface RiverFishActor {
   mesh: THREE.Group;
@@ -412,10 +414,31 @@ export function createTerrain(mat: MaterialCache): TerrainSystem {
     foliageGroup.add(prop);
   }
 
-  // 4f. High-Density Procedural Grass Instancing (1,800 InstancedMesh blades with per-instance tint & player-bend data)
+  // 4f. Add 3D Mystic Forest Biome GLB clusters (a_forest_3_with_a_road_at_night_for_game.glb)
+  const forestSpots = [
+    { x: -18, z: 26, rot: 0.2 },
+    { x: 22, z: 24, rot: -0.6 },
+    { x: -28, z: -12, rot: 1.1 },
+  ];
+  for (const fs of forestSpots) {
+    const forestModel = buildForestBiomeModel();
+    forestModel.position.set(fs.x, getTerrainHeight(fs.x, fs.z) - 0.15, fs.z);
+    forestModel.rotation.y = fs.rot;
+    foliageGroup.add(forestModel);
+  }
+
+  // 4g. High-Density Procedural Grass Instancing (1,800 InstancedMesh blades with per-instance tint & player-bend data)
   const grassCount = 1800;
-  const bladeGeo = new THREE.ConeGeometry(0.11, 0.72, 4);
-  bladeGeo.translate(0, 0.36, 0);
+  const bladeGeo = createSculptedOrganicGeometry(
+    [
+      [0.0, 0.11, 0.04],
+      [0.5, 0.08, 0.03],
+      [1.0, 0.005, 0.005],
+    ],
+    6,
+    0.72,
+    0
+  );
   const instancedGrass = new THREE.InstancedMesh(
     bladeGeo,
     mat.grassBladeMaterial,

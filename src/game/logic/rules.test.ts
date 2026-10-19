@@ -17,11 +17,37 @@ import {
   stepAngleShortestArc,
   computeAtmosphericPhysics,
   computeSurvivalMetabolism,
+  computeDayNightCycle,
+  PLAYABLE_CHARACTER_PROFILES,
   ARMOR_REGISTRY,
   CRAFTING_RECIPES,
   ADVENTURE_MISSIONS,
   INITIAL_EGG_NESTS,
 } from './rules.ts';
+
+test('computeDayNightCycle updates lighting, boosts nocturnal beast aggression, and swaps gathering resources at night', () => {
+  const noon = computeDayNightCycle(12.0);
+  const midnight = computeDayNightCycle(0.5);
+
+  assert.equal(noon.isNight, false);
+  assert.equal(noon.phase, 'day');
+  assert.equal(noon.activeGatheringResource, 'sun_herb');
+  assert.equal(noon.beastAggressionMultiplier, 1.0);
+
+  assert.equal(midnight.isNight, true);
+  assert.equal(midnight.phase, 'night');
+  assert.equal(midnight.activeGatheringResource, 'luminous_night_spore');
+  assert.ok(
+    midnight.beastAggressionMultiplier > noon.beastAggressionMultiplier,
+    'Beasts must be more aggressive at night'
+  );
+  assert.ok(
+    midnight.beastAggroRadiusMultiplier > noon.beastAggroRadiusMultiplier,
+    'Beasts must have wider aggro detection radius at night'
+  );
+  assert.ok(midnight.sunIntensity < noon.sunIntensity, 'Night illumination must be dimmer than noon');
+  assert.ok(PLAYABLE_CHARACTER_PROFILES.demon_hunter && PLAYABLE_CHARACTER_PROFILES.swat_operator && PLAYABLE_CHARACTER_PROFILES.bulky_knight);
+});
 
 test('computeCameraRelativeMovement moves FRONT (+Z) when joystick pushed UP and BACK (-Z) when pushed DOWN at cameraYaw = 0', () => {
   const front = computeCameraRelativeMovement(1, 0, 0, 8, 1);

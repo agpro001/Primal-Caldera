@@ -19,7 +19,132 @@ import type {
   AtmosphericScienceState,
   CreatureEggNest,
   AdventureMission,
+  DayNightState,
+  PlayableCharacterId,
 } from '../../types/game.ts';
+
+export const PLAYABLE_CHARACTER_PROFILES: Record<
+  PlayableCharacterId,
+  {
+    id: PlayableCharacterId;
+    name: string;
+    shortTitle: string;
+    role: string;
+    sketchfabId: string;
+    modelUrl: string;
+    moveSpeed: number;
+    attackMultiplier: number;
+    defenseBonus: number;
+    accentHex: string;
+  }
+> = {
+  demon_hunter: {
+    id: 'demon_hunter',
+    name: 'Demon Hunter',
+    shortTitle: 'Glaive & Glide Specialist',
+    role: 'Agile Melee & Aerial Glaive Specialist',
+    sketchfabId: 'ff6a14371bc347d9a1526f5e64b29327',
+    modelUrl: '/models/demon_hunter.glb',
+    moveSpeed: 9.2,
+    attackMultiplier: 1.25,
+    defenseBonus: 8,
+    accentHex: '#a855f7',
+  },
+  swat_operator: {
+    id: 'swat_operator',
+    name: 'S.W.A.T. Operator',
+    shortTitle: 'Tactical Marksman',
+    role: 'Tactical Ranged Marksman & Heavy Ordnance Specialist',
+    sketchfabId: '9e82fabf26194896b5ad4a364d864eab',
+    modelUrl: '/models/S.W.A.T.usdz',
+    moveSpeed: 7.8,
+    attackMultiplier: 1.35,
+    defenseBonus: 18,
+    accentHex: '#38bdf8',
+  },
+  bulky_knight: {
+    id: 'bulky_knight',
+    name: 'Bulky Knight',
+    shortTitle: 'Heavy Tank & Forge Master',
+    role: 'Heavy Tank, Campfire Forge Master & Leviathan Grappler',
+    sketchfabId: '002a90cbf12941b792f968554687502c',
+    modelUrl: '/models/bulky_knight.glb',
+    moveSpeed: 6.4,
+    attackMultiplier: 1.5,
+    defenseBonus: 42,
+    accentHex: '#f59e0b',
+  },
+};
+
+/**
+ * Pure function computing the Day-Night Cycle lighting parameters,
+ * nocturnal beast aggression boost, and active diurnal/nocturnal gathering resource.
+ */
+export function computeDayNightCycle(rawHours: number): DayNightState {
+  const timeOfDayHours = ((rawHours % 24) + 24) % 24;
+
+  // Determine phase:
+  // Dawn: 5.5 - 7.5
+  // Day: 7.5 - 17.5
+  // Dusk: 17.5 - 19.5
+  // Night: 19.5 - 24.0 and 0.0 - 5.5
+  let phase: DayNightState['phase'] = 'day';
+  if (timeOfDayHours >= 19.5 || timeOfDayHours < 5.5) {
+    phase = 'night';
+  } else if (timeOfDayHours >= 5.5 && timeOfDayHours < 7.5) {
+    phase = 'dawn';
+  } else if (timeOfDayHours >= 17.5 && timeOfDayHours < 19.5) {
+    phase = 'dusk';
+  }
+
+  const isNight = phase === 'night';
+
+  // Smooth elevation factor of sun (-1 at midnight, +1 at noon)
+  const sunAngle = ((timeOfDayHours - 6) / 24) * Math.PI * 2;
+  const sunElev = Math.sin(sunAngle); // +1 at 12:00, 0 at 6:00/18:00, -1 at 0:00
+
+  let sunIntensity = 2.35;
+  let ambientIntensity = 1.15;
+  let skyColorHex = 0x1e293b;
+  let fogColorHex = 0x263244;
+
+  if (phase === 'night') {
+    sunIntensity = 0.45;
+    ambientIntensity = 0.52;
+    skyColorHex = 0x060a14;
+    fogColorHex = 0x09101f;
+  } else if (phase === 'dawn') {
+    const t = (timeOfDayHours - 5.5) / 2.0;
+    sunIntensity = Number((0.45 + t * 1.9).toFixed(2));
+    ambientIntensity = Number((0.52 + t * 0.63).toFixed(2));
+    skyColorHex = 0x2b1d38;
+    fogColorHex = 0x3b2439;
+  } else if (phase === 'dusk') {
+    const t = (timeOfDayHours - 17.5) / 2.0;
+    sunIntensity = Number((2.35 - t * 1.9).toFixed(2));
+    ambientIntensity = Number((1.15 - t * 0.63).toFixed(2));
+    skyColorHex = 0x2d192b;
+    fogColorHex = 0x381e2c;
+  } else {
+    sunIntensity = Number((1.95 + Math.max(0, sunElev) * 0.45).toFixed(2));
+    ambientIntensity = 1.15;
+    skyColorHex = 0x1a2636;
+    fogColorHex = 0x243242;
+  }
+
+  return {
+    timeOfDayHours: Number(timeOfDayHours.toFixed(2)),
+    phase,
+    isNight,
+    sunIntensity,
+    ambientIntensity,
+    skyColorHex,
+    fogColorHex,
+    beastAggressionMultiplier: isNight ? 1.35 : phase === 'dusk' ? 1.15 : 1.0,
+    beastAggroRadiusMultiplier: isNight ? 1.45 : phase === 'dusk' ? 1.2 : 1.0,
+    activeGatheringResource: isNight ? 'luminous_night_spore' : 'sun_herb',
+  };
+}
 
 export const WEAPON_REGISTRY: Record<WeaponId, WeaponDef> = {
   flint_spear: {
@@ -1116,3 +1241,65 @@ export function createBeastWeakPoints(species: BeastSpecies): BeastWeakPoint[] {
       ];
   }
 }
+
+export interface DayNightCycleMetrics {
+  timeOfDayHours: number;
+  phase: 'dawn' | 'day' | 'dusk' | 'night';
+  isNight: boolean;
+  sunElevationSin: number;
+  sunIntensity: number;
+  moonIntensity: number;
+  beastAggressionMultiplier: number;
+  beastDetectionRangeBonus: number;
+  nocturnalResourceBonusCount: number;
+  bonusResourceId: string;
+}
+
+/**
+ * Pure function calculating the Day-Night Cycle state from a 24-hour clock (0..24):
+ * - Updates lighting intensities (sun vs moon)
+ * - Increases beast aggression & detection radius at night
+ * - Changes available gathering resources at night (nocturnal bioluminescent drops)
+ */
+export function computeDayNightCycleState(
+  timeOfDayHours: number,
+  biome: BiomeType = 'jungle'
+): DayNightCycleMetrics {
+  const normalizedHours = ((timeOfDayHours % 24) + 24) % 24;
+  const phase: 'dawn' | 'day' | 'dusk' | 'night' =
+    normalizedHours >= 5.5 && normalizedHours < 7.5
+      ? 'dawn'
+      : normalizedHours >= 7.5 && normalizedHours < 17.5
+      ? 'day'
+      : normalizedHours >= 17.5 && normalizedHours < 19.5
+      ? 'dusk'
+      : 'night';
+
+  const isNight = phase === 'night' || phase === 'dusk';
+  const sunAngle = ((normalizedHours - 6) / 24) * Math.PI * 2;
+  const sunElevationSin = Number(Math.sin(sunAngle).toFixed(4));
+  const dayFactor = Math.max(0, Math.min(1, (sunElevationSin + 0.15) / 1.15));
+
+  const sunIntensity = Number((0.18 + dayFactor * 2.25).toFixed(2));
+  const moonIntensity = Number((0.35 + (1 - dayFactor) * 0.95).toFixed(2));
+
+  const beastAggressionMultiplier = isNight ? 1.35 : 1.0;
+  const beastDetectionRangeBonus = isNight ? 12 : 0;
+  const nocturnalResourceBonusCount = isNight ? 1 : 0;
+  const bonusResourceId =
+    biome === 'caldera' || biome === 'lava' ? 'magma_core' : 'glow_moss';
+
+  return {
+    timeOfDayHours: Number(normalizedHours.toFixed(2)),
+    phase,
+    isNight,
+    sunElevationSin,
+    sunIntensity,
+    moonIntensity,
+    beastAggressionMultiplier,
+    beastDetectionRangeBonus,
+    nocturnalResourceBonusCount,
+    bonusResourceId,
+  };
+}
+
