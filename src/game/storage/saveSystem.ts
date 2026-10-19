@@ -21,7 +21,7 @@ export function getInitialSaveData(): SaveData {
     timestamp: Date.now(),
     playerName: 'Koa',
     biome: 'jungle',
-    playerPos: { x: 0, y: 1.0, z: 28 }, // Campfire haven
+    playerPos: { x: 0, y: 1.8, z: 31.8 }, // Beside Campfire Haven (outside the stone ring at 0, 28)
     playerStats: { ...DEFAULT_PLAYER_STATS },
     inventory: {
       materials: {
@@ -61,9 +61,15 @@ export function loadSavedGame(): SaveData {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.version === 1) {
+        const mergedPos = parsed.playerPos ?? defaults.playerPos;
+        if (Math.hypot(mergedPos.x - 0, mergedPos.z - 28) < 2.2) {
+          mergedPos.x = 0;
+          mergedPos.z = 31.8;
+        }
         return {
           ...defaults,
           ...parsed,
+          playerPos: mergedPos,
           playerStats: {
             ...defaults.playerStats,
             ...(parsed.playerStats ?? {}),

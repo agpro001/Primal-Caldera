@@ -92,6 +92,12 @@ export function App() {
     beastsSlain: number;
     materialsGathered?: number;
   }>({ beastsSlain: 0 });
+  const [hitMarker, setHitMarker] = useState<{
+    damage: number;
+    isCrit: boolean;
+    isWeakPoint: boolean;
+    id: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -147,6 +153,14 @@ export function App() {
         if (missions[activeIdx]) {
           setActiveAdventureId(missions[activeIdx].id);
         }
+      },
+      onHitMarker: (damage, isCrit, isWeakPoint) => {
+        setHitMarker({ damage, isCrit, isWeakPoint, id: Date.now() });
+        window.clearTimeout((window as unknown as { __hitTimer?: number }).__hitTimer);
+        (window as unknown as { __hitTimer?: number }).__hitTimer = window.setTimeout(
+          () => setHitMarker(null),
+          450
+        );
       },
     });
 
@@ -280,6 +294,7 @@ export function App() {
           interactPrompt={interactPrompt}
           notification={notification}
           focusVisionActive={focusVisionActive}
+          hitMarker={hitMarker}
           onAttack={() => engineRef.current?.startSpearAttack()}
           onChargeRelease={() => engineRef.current?.releaseHeavyThrust()}
           onJump={() => engineRef.current?.jumpPlayer()}

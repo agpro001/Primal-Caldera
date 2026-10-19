@@ -23,6 +23,23 @@ function createTileCanvas(
   return texture;
 }
 
+function createBumpCanvas(
+  width: number,
+  height: number,
+  draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void
+): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d')!;
+  draw(ctx, width, height);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.NoColorSpace;
+  return texture;
+}
+
 export class MaterialCache {
   public biomeGround: Record<BiomeType, THREE.MeshStandardMaterial>;
   public beastSkin: Record<BeastSpecies, THREE.MeshStandardMaterial>;
@@ -55,6 +72,9 @@ export class MaterialCache {
   public mithrilSilverMaterial: THREE.MeshStandardMaterial;
   public mithrilGoldTrimMaterial: THREE.MeshStandardMaterial;
   public mithrilCapeMaterial: THREE.MeshStandardMaterial;
+  public terrainDetailMap: THREE.CanvasTexture;
+  public terrainBumpMap: THREE.CanvasTexture;
+  public contactShadowMaterial: THREE.MeshBasicMaterial;
 
   constructor() {
     // 1. Biome Ground Textures
@@ -554,13 +574,27 @@ export class MaterialCache {
       metalness: 0.65,
     });
 
+    const mithrilBump = createBumpCanvas(128, 128, (ctx, w, h) => {
+      ctx.fillStyle = '#808080';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#a8a8a8';
+      ctx.lineWidth = 1.5;
+      for (let y = 0; y < h; y += 8) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w / 2, y + 4);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+    });
+
     // Mastercraft Mithril Armor Set (Beyond Skyrim2) PBR Materials
     this.mithrilSilverMaterial = new THREE.MeshStandardMaterial({
       map: createTileCanvas(128, 128, (ctx, w, h) => {
-        ctx.fillStyle = '#e0f2fe';
+        ctx.fillStyle = '#cbd5e1';
         ctx.fillRect(0, 0, w, h);
-        ctx.strokeStyle = '#bae6fd';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 1.5;
         for (let y = 0; y < h; y += 16) {
           ctx.beginPath();
           ctx.moveTo(0, y);
@@ -569,28 +603,97 @@ export class MaterialCache {
           ctx.stroke();
         }
       }),
-      color: 0xe0f2fe,
-      emissive: 0x0369a1,
-      emissiveIntensity: 0.22,
-      roughness: 0.18,
-      metalness: 0.88,
+      bumpMap: mithrilBump,
+      bumpScale: 0.018,
+      color: 0xdbeafe,
+      emissive: 0x0c4a6e,
+      emissiveIntensity: 0.14,
+      roughness: 0.26,
+      metalness: 0.86,
     });
 
     this.mithrilGoldTrimMaterial = new THREE.MeshStandardMaterial({
-      color: 0xfacc15,
-      emissive: 0xca8a04,
-      emissiveIntensity: 0.32,
-      roughness: 0.22,
-      metalness: 0.85,
+      bumpMap: mithrilBump,
+      bumpScale: 0.015,
+      color: 0xfbbf24,
+      emissive: 0x92400e,
+      emissiveIntensity: 0.22,
+      roughness: 0.24,
+      metalness: 0.88,
     });
 
     this.mithrilCapeMaterial = new THREE.MeshStandardMaterial({
-      color: 0x1d4ed8,
-      emissive: 0x1e3a8a,
-      emissiveIntensity: 0.2,
-      roughness: 0.55,
-      metalness: 0.15,
+      color: 0x1e40af,
+      emissive: 0x172554,
+      emissiveIntensity: 0.15,
+      roughness: 0.68,
+      metalness: 0.08,
       side: THREE.DoubleSide,
+    });
+
+    // High-frequency Terrain Micro-Detail Albedo & Bump Maps (tiled 48x across island)
+    this.terrainDetailMap = createTileCanvas(256, 256, (ctx, w, h) => {
+      ctx.fillStyle = '#e5e7eb';
+      ctx.fillRect(0, 0, w, h);
+      let s = 42;
+      const r = () => {
+        s = (s * 16807) % 2147483647;
+        return (s - 1) / 2147483646;
+      };
+      for (let i = 0; i < 900; i++) {
+        const shade = Math.floor(205 + r() * 48);
+        ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
+        ctx.fillRect(r() * w, r() * h, 2 + r() * 5, 2 + r() * 5);
+      }
+      ctx.strokeStyle = 'rgba(180,180,180,0.35)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 40; i++) {
+        ctx.beginPath();
+        const sx = r() * w;
+        const sy = r() * h;
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + 10 + r() * 14, sy + (r() - 0.5) * 8);
+        ctx.stroke();
+      }
+    });
+    this.terrainDetailMap.repeat.set(48, 48);
+
+    this.terrainBumpMap = createBumpCanvas(256, 256, (ctx, w, h) => {
+      ctx.fillStyle = '#808080';
+      ctx.fillRect(0, 0, w, h);
+      let s = 99;
+      const r = () => {
+        s = (s * 16807) % 2147483647;
+        return (s - 1) / 2147483646;
+      };
+      for (let i = 0; i < 1100; i++) {
+        const v = Math.floor(90 + r() * 130);
+        ctx.fillStyle = `rgb(${v},${v},${v})`;
+        ctx.fillRect(r() * w, r() * h, 2 + r() * 4, 2 + r() * 4);
+      }
+    });
+    this.terrainBumpMap.repeat.set(48, 48);
+
+    // Radial Soft Contact Shadow Texture for Grounding Actors & Props
+    const shadowCanvas = document.createElement('canvas');
+    shadowCanvas.width = 128;
+    shadowCanvas.height = 128;
+    const sCtx = shadowCanvas.getContext('2d')!;
+    const grad = sCtx.createRadialGradient(64, 64, 6, 64, 64, 60);
+    grad.addColorStop(0, 'rgba(0, 0, 0, 0.62)');
+    grad.addColorStop(0.55, 'rgba(0, 0, 0, 0.28)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+    sCtx.fillStyle = grad;
+    sCtx.fillRect(0, 0, 128, 128);
+    const shadowTex = new THREE.CanvasTexture(shadowCanvas);
+
+    this.contactShadowMaterial = new THREE.MeshBasicMaterial({
+      map: shadowTex,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
     });
   }
 
@@ -626,5 +729,8 @@ export class MaterialCache {
     this.mithrilSilverMaterial.dispose();
     this.mithrilGoldTrimMaterial.dispose();
     this.mithrilCapeMaterial.dispose();
+    this.terrainDetailMap.dispose();
+    this.terrainBumpMap.dispose();
+    this.contactShadowMaterial.dispose();
   }
 }

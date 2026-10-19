@@ -34,6 +34,7 @@ interface HUDProps {
   interactPrompt: string | null;
   notification: { message: string; type: 'info' | 'loot' | 'danger' } | null;
   focusVisionActive: boolean;
+  hitMarker?: { damage: number; isCrit: boolean; isWeakPoint: boolean; id: number } | null;
   onAttack: () => void;
   onChargeRelease: () => void;
   onJump: () => void;
@@ -69,6 +70,7 @@ export const HUD: React.FC<HUDProps> = ({
   interactPrompt,
   notification,
   focusVisionActive,
+  hitMarker,
   onAttack,
   onChargeRelease,
   onJump,
@@ -238,75 +240,6 @@ export const HUD: React.FC<HUDProps> = ({
               </div>
             </div>
           </div>
-
-          {/* Real Atmospheric Science & Aerodynamics Strip */}
-          <div className="bg-zinc-950/70 border border-white/15 rounded-xl px-3 py-2 shadow-xl">
-            <div className="flex items-center justify-between text-[9px] font-mono uppercase tracking-wider text-sky-300/90 mb-1">
-              <span>Atmospheric Science</span>
-              <span>{currentWeather.toUpperCase()} · {atmosphericScience.pressureHpa} hPa</span>
-            </div>
-            <div className="grid grid-cols-3 gap-1.5 text-[10px] font-mono text-zinc-200 tabular-nums">
-              <div>
-                <span className="text-zinc-500 block text-[9px]">ALT / TEMP</span>
-                <span>
-                  {atmosphericScience.altitudeM}m · {atmosphericScience.temperatureC}°C
-                </span>
-              </div>
-              <div>
-                <span className="text-zinc-500 block text-[9px]">AIR DENSITY</span>
-                <span>{atmosphericScience.airDensityKgM3.toFixed(3)} kg/m³</span>
-              </div>
-              <div>
-                <span className="text-zinc-500 block text-[9px]">WIND / LIFT</span>
-                <span className="text-cyan-300">
-                  {atmosphericScience.windSpeedMs}m/s · +{atmosphericScience.thermalLiftMs}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Multi-Stage Open-World Adventure Operations (ARK / GTA V Style) */}
-          {activeAdventure && (
-            <div className="bg-zinc-950/75 border border-white/15 rounded-xl px-3.5 py-2.5 shadow-xl pointer-events-auto">
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-amber-400">
-                  {activeAdventure.codeName}
-                </span>
-                <div className="flex items-center gap-1">
-                  {adventureMissions.map((m, idx) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => onSelectAdventure(m.id)}
-                      className={`w-5 h-5 rounded text-[10px] font-mono font-bold transition-all cursor-pointer ${
-                        m.id === activeAdventure.id
-                          ? 'bg-amber-500 text-black'
-                          : m.completed
-                          ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-500/40'
-                          : 'bg-white/5 text-zinc-400 hover:bg-white/15'
-                      }`}
-                      title={m.title}
-                    >
-                      {idx + 1}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <p className="text-xs font-bold text-white leading-snug">{activeAdventure.title}</p>
-              <p className="text-[11px] text-zinc-300 mt-0.5 leading-relaxed">
-                {activeAdventure.stages[activeAdventure.currentStage]}
-              </p>
-              <div className="mt-1.5 pt-1.5 border-t border-white/10 flex items-center justify-between text-[10px] font-mono text-zinc-400">
-                <span>
-                  Stage {activeAdventure.currentStage + 1}/{activeAdventure.stages.length}
-                </span>
-                <span className="text-amber-300/90 truncate max-w-[170px]">
-                  {currentQuest.title}
-                </span>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Top-Center: Lock-On Colossal Beast or Flying Dragon Vital Bar */}
@@ -381,10 +314,24 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
       </div>
 
-      {/* CENTER Reticle & Contextual Prompts */}
+      {/* CENTER Reticle, Screen-Space Hit Markers & Contextual Prompts */}
       <div className="my-auto flex flex-col items-center justify-center pointer-events-none">
-        <div className="w-5 h-5 flex items-center justify-center opacity-75">
-          <div className="w-1.5 h-1.5 rounded-full bg-sky-300 shadow-[0_0_8px_#38bdf8]" />
+        <div className="relative w-7 h-7 flex items-center justify-center">
+          <div className="w-1.5 h-1.5 rounded-full bg-sky-300 shadow-[0_0_8px_#38bdf8] opacity-85" />
+          {hitMarker && (
+            <>
+              <span className="absolute w-5 h-0.5 bg-amber-300 rotate-45 shadow-[0_0_8px_#fbbf24]" />
+              <span className="absolute w-5 h-0.5 bg-amber-300 -rotate-45 shadow-[0_0_8px_#fbbf24]" />
+              <span
+                className={`absolute -top-6 text-xs font-black font-mono tracking-wider drop-shadow ${
+                  hitMarker.isWeakPoint || hitMarker.isCrit ? 'text-amber-300 scale-110' : 'text-red-400'
+                }`}
+              >
+                -{Math.round(hitMarker.damage)}
+                {hitMarker.isWeakPoint ? ' WEAK!' : hitMarker.isCrit ? ' CRIT!' : ''}
+              </span>
+            </>
+          )}
         </div>
 
         {interactPrompt && (

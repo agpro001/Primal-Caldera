@@ -26,12 +26,22 @@ export interface RiverFishActor {
   phase: number;
 }
 
+export interface GrassInstanceData {
+  x: number;
+  y: number;
+  z: number;
+  scale: number;
+  rotY: number;
+}
+
 export interface TerrainSystem {
   mesh: THREE.Mesh;
   oceanMesh: THREE.Mesh;
   riverMesh: THREE.Mesh;
   lavaFlowMesh: THREE.Mesh;
   foliageGroup: THREE.Group;
+  instancedGrass: THREE.InstancedMesh;
+  grassData: GrassInstanceData[];
   campGroup: THREE.Group;
   towerGroup: THREE.Group;
   clueGroup: THREE.Group;
@@ -211,8 +221,13 @@ export function createTerrain(mat: MaterialCache): TerrainSystem {
 
   const terrainMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
-    roughness: 0.88,
-    metalness: 0.05,
+    color: 0xffffff,
+    map: mat.terrainDetailMap,
+    bumpMap: mat.terrainBumpMap,
+    bumpScale: 0.14,
+    roughnessMap: mat.terrainBumpMap,
+    roughness: 0.86,
+    metalness: 0.06,
   });
 
   const mesh = new THREE.Mesh(geometry, terrainMaterial);
@@ -397,6 +412,61 @@ export function createTerrain(mat: MaterialCache): TerrainSystem {
     foliageGroup.add(prop);
   }
 
+  // 4f. High-Density Procedural Grass Instancing (1,800 InstancedMesh blades with per-instance tint & player-bend data)
+  const grassCount = 1800;
+  const bladeGeo = new THREE.ConeGeometry(0.11, 0.72, 4);
+  bladeGeo.translate(0, 0.36, 0);
+  const instancedGrass = new THREE.InstancedMesh(
+    bladeGeo,
+    mat.grassBladeMaterial,
+    grassCount
+  );
+  instancedGrass.castShadow = false;
+  instancedGrass.receiveShadow = true;
+
+  const grassData: GrassInstanceData[] = [];
+  const dummy = new THREE.Object3D();
+  const gColor = new THREE.Color();
+  const grassPalette = [0x4d8c3a, 0x3b7a36, 0x65a30d, 0x2e5c23, 0x5da13c];
+
+  let gIdx = 0;
+  for (let attempt = 0; attempt < 3400 && gIdx < grassCount; attempt++) {
+    // Concentrate 45% of grass around the central valley & Campfire Haven for rich foreground micro-detail
+    const isNearHaven = attempt < 850;
+    const gx = isNearHaven ? (rand() - 0.5) * 68 : (rand() - 0.5) * 195;
+    const gz = isNearHaven ? 18 + (rand() - 0.5) * 52 : (rand() - 0.5) * 195;
+
+    // Keep immediate campfire firepit (radius 2.4m) and river channel clear
+    if (Math.hypot(gx - 0, gz - 28) < 2.5) continue;
+    if (Math.hypot(gx - 0, gz - 5) < 4.2) continue;
+    const gBiome = getTerrainBiome(gx, gz);
+    if (gBiome === 'ocean' || gBiome === 'river' || gBiome === 'lava' || gBiome === 'caldera') continue;
+
+    const gy = getTerrainHeight(gx, gz);
+    const gScale = 0.7 + rand() * 0.85;
+    const gRotY = rand() * Math.PI * 2;
+
+    dummy.position.set(gx, gy, gz);
+    dummy.rotation.set((rand() - 0.5) * 0.22, gRotY, (rand() - 0.5) * 0.22);
+    dummy.scale.set(gScale, gScale * (0.85 + rand() * 0.4), gScale);
+    dummy.updateMatrix();
+    instancedGrass.setMatrixAt(gIdx, dummy.matrix);
+
+    if (gBiome === 'snow') {
+      gColor.setHex(0x94a3b8);
+    } else {
+      gColor.setHex(grassPalette[gIdx % grassPalette.length]);
+    }
+    instancedGrass.setColorAt(gIdx, gColor);
+
+    grassData.push({ x: gx, y: gy, z: gz, scale: gScale, rotY: gRotY });
+    gIdx++;
+  }
+  instancedGrass.count = gIdx;
+  instancedGrass.instanceMatrix.needsUpdate = true;
+  if (instancedGrass.instanceColor) instancedGrass.instanceColor.needsUpdate = true;
+  instancedGrass.computeBoundingSphere();
+
   // Campfire Workbench at (0, 28)
   const campGroup = buildCampfireWorkbench(mat);
   campGroup.position.set(0, getTerrainHeight(0, 28), 28);
@@ -425,6 +495,8 @@ export function createTerrain(mat: MaterialCache): TerrainSystem {
     riverMesh,
     lavaFlowMesh,
     foliageGroup,
+    instancedGrass,
+    grassData,
     campGroup,
     towerGroup,
     clueGroup,

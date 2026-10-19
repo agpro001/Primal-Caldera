@@ -11,18 +11,28 @@ import { WEAPON_REGISTRY, ARMOR_REGISTRY } from '../logic/rules.ts';
 
 export interface HunterRig {
   root: THREE.Group;
+  pelvis: THREE.Group;
   torso: THREE.Group;
   head: THREE.Group;
   leftArm: THREE.Group;
+  leftForearm: THREE.Group;
+  leftHand: THREE.Group;
   rightArm: THREE.Group;
+  rightForearm: THREE.Group;
+  rightHand: THREE.Group;
   leftLeg: THREE.Group;
+  leftShin: THREE.Group;
+  leftFoot: THREE.Group;
   rightLeg: THREE.Group;
+  rightShin: THREE.Group;
+  rightFoot: THREE.Group;
   weaponMount: THREE.Group;
   cape?: THREE.Mesh;
   wings?: THREE.Group;
   wingsGroup?: THREE.Group;
   leftWing?: THREE.Group;
   rightWing?: THREE.Group;
+  contactShadow?: THREE.Mesh;
   armorPads: THREE.Mesh[];
   updateWeapon: (weaponId: WeaponId) => void;
   updateArmor: (armorId: ArmorId) => void;
@@ -43,130 +53,221 @@ export interface BeastRig {
 
 /**
  * Builds the 3D Hunter character model clad in the Mastercraft Mithril Armor Set
- * (inspired by Beyond Skyrim2 by Royraj Vichaidit) with silver-blue Mithril plate,
- * gold filigree trim, plumed winged helm, armored tasset skirt, flowing royal cape,
- * and deployable Aetherial Flight Wings.
+ * (inspired by Beyond Skyrim2 by Royraj Vichaidit) with a full 18-joint articulated
+ * skeletal hierarchy (pelvis, spine/torso, neck/head, shoulder -> elbow -> hand,
+ * hip -> knee -> ankle/foot), dorsal Aetherial Flight Harness (folded when grounded,
+ * expanded when flying), hand-gripped weapon mount, and grounded contact shadow.
  */
 export function buildHunterModel(mat: MaterialCache, initialArmor: ArmorId = 'scavenger_rags'): HunterRig {
   const root = new THREE.Group();
 
-  const torso = new THREE.Group();
-  torso.position.set(0, 1.05, 0);
-  root.add(torso);
+  // Soft Radial Ground Contact Shadow Disc
+  const contactShadow = new THREE.Mesh(
+    new THREE.CircleGeometry(0.95, 24),
+    mat.contactShadowMaterial
+  );
+  contactShadow.rotation.x = -Math.PI / 2;
+  contactShadow.position.set(0, 0.02, 0);
+  contactShadow.renderOrder = 1;
+  root.add(contactShadow);
 
-  // 1. Ornate Mastercraft Mithril Cuirass (Breastplate)
-  const chestGeo = new THREE.CylinderGeometry(0.32, 0.25, 0.74, 16);
+  // Dark Quilted Gambeson Under-Armor Material (contrasting matte roughness = 0.78)
+  const gambesonMat = new THREE.MeshStandardMaterial({
+    color: 0x1e293b,
+    roughness: 0.78,
+    metalness: 0.12,
+  });
+
+  // 1. Articulated Pelvis & Hip Root (y = 0.92)
+  const pelvis = new THREE.Group();
+  pelvis.position.set(0, 0.92, 0);
+  root.add(pelvis);
+
+  const pelvisBlock = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.24, 0.22, 0.24, 14),
+    gambesonMat
+  );
+  pelvisBlock.castShadow = true;
+  pelvis.add(pelvisBlock);
+
+  // Gilded War Belt & Fauld Waist Plates
+  const beltMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.265, 0.275, 0.11, 16),
+    mat.mithrilGoldTrimMaterial
+  );
+  beltMesh.position.set(0, 0.04, 0);
+  beltMesh.castShadow = true;
+  pelvis.add(beltMesh);
+
+  // Sculpted Pleated Mithril Tassets & Royal Split Skirt
+  const kiltGeo = new THREE.CylinderGeometry(0.25, 0.35, 0.36, 16, 1, true);
+  const kiltMesh = new THREE.Mesh(kiltGeo, mat.mithrilCapeMaterial);
+  kiltMesh.position.set(0, -0.16, 0);
+  kiltMesh.castShadow = true;
+  pelvis.add(kiltMesh);
+
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2 + Math.PI / 6;
+    const tassetGroup = new THREE.Group();
+    tassetGroup.position.set(Math.sin(angle) * 0.27, -0.14, Math.cos(angle) * 0.27);
+    tassetGroup.rotation.y = angle;
+    tassetGroup.rotation.x = 0.14;
+
+    const tassetPlate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, 0.3, 0.035),
+      mat.mithrilSilverMaterial.clone()
+    );
+    tassetPlate.castShadow = true;
+    tassetGroup.add(tassetPlate);
+
+    const tassetTrim = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.04, 0.042),
+      mat.mithrilGoldTrimMaterial
+    );
+    tassetTrim.position.set(0, -0.12, 0);
+    tassetGroup.add(tassetTrim);
+    pelvis.add(tassetGroup);
+  }
+
+  // 2. Articulated Spine & Upper Torso Cuirass
+  const torso = new THREE.Group();
+  torso.position.set(0, 0.14, 0);
+  pelvis.add(torso);
+
+  // Anatomical Lathe-Sculpted Mastercraft Mithril Cuirass
+  const cuirassPoints = [
+    new THREE.Vector2(0.21, 0.0),
+    new THREE.Vector2(0.24, 0.16),
+    new THREE.Vector2(0.31, 0.38),
+    new THREE.Vector2(0.29, 0.56),
+    new THREE.Vector2(0.20, 0.66),
+  ];
+  const chestGeo = new THREE.LatheGeometry(cuirassPoints, 18);
   const chestMesh = new THREE.Mesh(chestGeo, mat.mithrilSilverMaterial.clone());
+  chestMesh.scale.set(1.08, 1.0, 0.82);
   chestMesh.castShadow = true;
+  chestMesh.receiveShadow = true;
   torso.add(chestMesh);
 
-  // Sculpted Mithril Pectoral Plate + Gold Filigree Trim Arches
+  // Beveled V-Shaped Pectoral Plackart & Filigree Breastplate
   const pectoralPlate = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.36, 0.16),
+    new THREE.BoxGeometry(0.46, 0.34, 0.14),
     mat.mithrilSilverMaterial.clone()
   );
-  pectoralPlate.position.set(0, 0.14, 0.19);
+  pectoralPlate.position.set(0, 0.4, 0.16);
+  pectoralPlate.rotation.x = -0.08;
   pectoralPlate.castShadow = true;
   torso.add(pectoralPlate);
 
-  const goldCollarGeo = new THREE.TorusGeometry(0.25, 0.032, 8, 20);
+  // Gold Filigree Gorget Collar
+  const goldCollarGeo = new THREE.TorusGeometry(0.21, 0.032, 10, 22);
   goldCollarGeo.rotateX(Math.PI / 2);
   const goldCollar = new THREE.Mesh(goldCollarGeo, mat.mithrilGoldTrimMaterial);
-  goldCollar.position.set(0, 0.34, 0.02);
+  goldCollar.position.set(0, 0.62, 0.02);
   torso.add(goldCollar);
 
-  // Glowing Aetherial Mithril Chest Gem
+  // Glowing Aetherial Mithril Chest Core Matrix
   const chestGem = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.075, 0),
+    new THREE.OctahedronGeometry(0.068, 0),
     new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
       emissive: 0x0284c7,
-      emissiveIntensity: 1.2,
+      emissiveIntensity: 1.35,
       metalness: 0.9,
       roughness: 0.1,
     })
   );
-  chestGem.position.set(0, 0.16, 0.28);
+  chestGem.position.set(0, 0.42, 0.24);
   torso.add(chestGem);
 
   // Gold Filigree Rib Trim Bands
-  for (const ry of [0.02, -0.1]) {
+  for (const ry of [0.26, 0.14]) {
     const ribTrim = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.285, 0.275, 0.035, 16),
+      new THREE.CylinderGeometry(0.26, 0.24, 0.03, 16),
       mat.mithrilGoldTrimMaterial
     );
+    ribTrim.scale.set(1.08, 1, 0.84);
     ribTrim.position.set(0, ry, 0.01);
     torso.add(ribTrim);
   }
 
-  // 2. Pleated Mithril Tassets & Armored Royal Skirt
-  const kiltGeo = new THREE.CylinderGeometry(0.26, 0.38, 0.44, 16);
-  const kiltMesh = new THREE.Mesh(kiltGeo, mat.mithrilSilverMaterial.clone());
-  kiltMesh.position.set(0, -0.36, 0);
-  kiltMesh.castShadow = true;
-  torso.add(kiltMesh);
-
-  // Gold-Trimmed Tasset Plates around Skirt
-  for (let i = 0; i < 6; i++) {
-    const angle = (i / 6) * Math.PI * 2;
-    const tasset = new THREE.Mesh(
-      new THREE.BoxGeometry(0.14, 0.34, 0.04),
-      mat.mithrilGoldTrimMaterial
-    );
-    tasset.position.set(Math.sin(angle) * 0.31, -0.35, Math.cos(angle) * 0.31);
-    tasset.rotation.y = angle;
-    torso.add(tasset);
-  }
-
-  // Gilded War Belt
-  const beltMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.28, 0.28, 0.09, 16),
-    mat.mithrilGoldTrimMaterial
-  );
-  beltMesh.position.set(0, -0.18, 0);
-  torso.add(beltMesh);
-
-  // 3. Flowing Royal Mithril Mantle Cape (animates with wind & velocity)
-  const capeGeo = new THREE.BoxGeometry(0.62, 1.05, 0.03);
+  // 3. Flowing Royal Mithril Mantle Cape (Multi-fold articulated cloth plane)
+  const capeGeo = new THREE.BoxGeometry(0.58, 1.02, 0.025, 4, 6, 1);
   capeGeo.translate(0, -0.5, 0);
   const cape = new THREE.Mesh(capeGeo, mat.mithrilCapeMaterial);
-  cape.position.set(0, 0.32, -0.22);
+  cape.position.set(0, 0.58, -0.2);
   cape.rotation.x = 0.16;
   cape.castShadow = true;
   torso.add(cape);
 
-  // 4. Deployable Aetherial Mithril Flight Wings (toggled via [V] or HUD Fly button)
+  // 4. Dorsal Aetherial Flight Harness & Articulated Wings (Always Visible on Back: Folded vs Deployed)
+  const dorsalPack = new THREE.Group();
+  dorsalPack.position.set(0, 0.44, -0.21);
+  torso.add(dorsalPack);
+
+  const packCore = new THREE.Mesh(
+    new THREE.BoxGeometry(0.32, 0.36, 0.12),
+    mat.mithrilGoldTrimMaterial
+  );
+  packCore.castShadow = true;
+  dorsalPack.add(packCore);
+
+  for (const side of [-1, 1]) {
+    const thrusterPod = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.055, 0.07, 0.38, 10),
+      mat.mithrilSilverMaterial
+    );
+    thrusterPod.position.set(side * 0.16, -0.02, -0.03);
+    thrusterPod.rotation.z = side * -0.15;
+    dorsalPack.add(thrusterPod);
+
+    const nozzleGlow = new THREE.Mesh(
+      new THREE.ConeGeometry(0.05, 0.14, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0x7dd3fc,
+        emissive: 0x38bdf8,
+        emissiveIntensity: 1.5,
+      })
+    );
+    nozzleGlow.position.set(side * 0.18, -0.24, -0.03);
+    nozzleGlow.rotation.x = Math.PI;
+    dorsalPack.add(nozzleGlow);
+  }
+
   const wingsGroup = new THREE.Group();
-  wingsGroup.position.set(0, 0.24, -0.2);
-  wingsGroup.visible = false;
+  wingsGroup.position.set(0, 0.48, -0.24);
+  // Keep wingsGroup visible at all times: compact folded on ground, expanded when flying!
+  wingsGroup.visible = true;
+  wingsGroup.scale.set(0.38, 0.45, 0.38);
   torso.add(wingsGroup);
 
   const wingMat = new THREE.MeshStandardMaterial({
     color: 0x38bdf8,
     emissive: 0x0284c7,
-    emissiveIntensity: 0.65,
-    metalness: 0.75,
-    roughness: 0.2,
+    emissiveIntensity: 0.75,
+    metalness: 0.78,
+    roughness: 0.18,
     side: THREE.DoubleSide,
   });
 
   const buildWingSide = (dir: 1 | -1) => {
     const wGroup = new THREE.Group();
     const spar = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.035, 0.02, 1.85, 8),
+      new THREE.CylinderGeometry(0.035, 0.02, 1.9, 8),
       mat.mithrilGoldTrimMaterial
     );
     spar.rotation.z = dir * -1.15;
     spar.position.set(dir * 0.85, 0.35, 0);
+    spar.castShadow = true;
     wGroup.add(spar);
 
-    for (let f = 0; f < 5; f++) {
+    for (let f = 0; f < 6; f++) {
       const featherBlade = new THREE.Mesh(
-        new THREE.BoxGeometry(0.14, 0.95 - f * 0.11, 0.02),
+        new THREE.BoxGeometry(0.15, 1.02 - f * 0.11, 0.022),
         wingMat
       );
-      featherBlade.position.set(dir * (0.35 + f * 0.32), 0.05 + f * 0.04, -0.02);
-      featherBlade.rotation.z = dir * -0.35;
+      featherBlade.position.set(dir * (0.32 + f * 0.3), 0.06 + f * 0.04, -0.02);
+      featherBlade.rotation.z = dir * -0.32;
       wGroup.add(featherBlade);
     }
     return wGroup;
@@ -174,168 +275,254 @@ export function buildHunterModel(mat: MaterialCache, initialArmor: ArmorId = 'sc
 
   const leftWing = buildWingSide(1);
   const rightWing = buildWingSide(-1);
+  // Default grounded folded posture
+  leftWing.rotation.z = -0.75;
+  rightWing.rotation.z = 0.75;
   wingsGroup.add(leftWing, rightWing);
 
-  // 5. Head & Mastercraft Mithril Winged-Crest Helm
+  // 5. Articulated Neck, Head & Mastercraft Mithril Winged-Crest Sallet Helm
   const head = new THREE.Group();
-  head.position.set(0, 0.58, 0);
+  head.position.set(0, 0.8, 0);
   torso.add(head);
 
+  const neckCollar = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.15, 0.14, 12),
+    gambesonMat
+  );
+  neckCollar.position.set(0, -0.1, 0);
+  head.add(neckCollar);
+
   const helmDome = new THREE.Mesh(
-    new THREE.SphereGeometry(0.245, 16, 16),
+    new THREE.SphereGeometry(0.22, 18, 16),
     mat.mithrilSilverMaterial.clone()
   );
+  helmDome.scale.set(0.96, 1.08, 1.06);
   helmDome.castShadow = true;
   head.add(helmDome);
 
-  // Glowing Visor Slit (facing +Z)
+  // Sculpted Faceplate & Nasal Guard
+  const faceplate = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.21, 0.18, 0.24, 12, 1, false, -Math.PI * 0.45, Math.PI * 0.9),
+    mat.mithrilSilverMaterial.clone()
+  );
+  faceplate.position.set(0, -0.05, 0.03);
+  head.add(faceplate);
+
+  // Glowing Aetherial Visor Slit (facing +Z)
   const visorMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.24, 0.055, 0.08),
+    new THREE.BoxGeometry(0.22, 0.042, 0.08),
     new THREE.MeshStandardMaterial({
       color: 0x7dd3fc,
       emissive: 0x38bdf8,
-      emissiveIntensity: 1.4,
+      emissiveIntensity: 1.5,
     })
   );
-  visorMesh.position.set(0, 0.03, 0.21);
+  visorMesh.position.set(0, 0.02, 0.19);
   head.add(visorMesh);
 
   // Golden Helm Crown Circlet & Winged Cheekguards
   const crownBand = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.252, 0.252, 0.065, 16),
+    new THREE.CylinderGeometry(0.228, 0.228, 0.055, 16),
     mat.mithrilGoldTrimMaterial
   );
-  crownBand.position.set(0, 0.09, 0);
+  crownBand.position.set(0, 0.08, 0);
   head.add(crownBand);
 
   for (const side of [-1, 1]) {
     const helmWing = new THREE.Mesh(
-      new THREE.ConeGeometry(0.06, 0.34, 5),
+      new THREE.BoxGeometry(0.04, 0.34, 0.14),
       mat.mithrilGoldTrimMaterial
     );
-    helmWing.position.set(side * 0.25, 0.18, -0.04);
-    helmWing.rotation.x = -0.35;
-    helmWing.rotation.z = side * -0.3;
+    helmWing.position.set(side * 0.23, 0.16, -0.04);
+    helmWing.rotation.x = -0.38;
+    helmWing.rotation.z = side * -0.25;
     head.add(helmWing);
   }
 
-  // Royal Azure-Gold Helm Plume Crest
+  // Swept Royal Azure Helm Crest Plume
   const plumeCrest = new THREE.Mesh(
-    new THREE.ConeGeometry(0.14, 0.42, 10),
+    new THREE.ConeGeometry(0.11, 0.42, 10),
     mat.mithrilCapeMaterial
   );
-  plumeCrest.position.set(0, 0.27, -0.08);
-  plumeCrest.rotation.x = -0.55;
+  plumeCrest.position.set(0, 0.26, -0.1);
+  plumeCrest.rotation.x = -0.68;
   head.add(plumeCrest);
 
-  // 6. Layered Mastercraft Mithril Shoulder Pauldrons
-  const leftPad = new THREE.Mesh(
-    new THREE.SphereGeometry(0.19, 12, 12),
-    mat.mithrilSilverMaterial.clone()
-  );
-  leftPad.position.set(0.39, 0.29, 0);
-  leftPad.scale.set(1.22, 0.82, 1.22);
-  torso.add(leftPad);
+  // 6. Articulated Left & Right Arms (Shoulder -> UpperArm -> Elbow -> Forearm -> Gauntlet Hand)
+  const buildArticulatedArm = (side: 1 | -1) => {
+    const shoulderRoot = new THREE.Group();
+    shoulderRoot.position.set(side * 0.38, 0.54, 0);
+    torso.add(shoulderRoot);
 
-  const leftPadTrim = new THREE.Mesh(
-    new THREE.TorusGeometry(0.18, 0.025, 6, 14),
-    mat.mithrilGoldTrimMaterial
-  );
-  leftPadTrim.rotation.x = Math.PI / 2;
-  leftPadTrim.position.set(0.39, 0.26, 0);
-  torso.add(leftPadTrim);
+    // Multi-tiered Sculpted Mastercraft Spaulder (Pauldron)
+    const pauldronMain = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14, 0.21, 0.2, 12, 1, false, 0, Math.PI * 1.3),
+      mat.mithrilSilverMaterial.clone()
+    );
+    pauldronMain.rotation.z = side * -0.45;
+    pauldronMain.rotation.y = side === 1 ? -0.4 : Math.PI - 0.4;
+    pauldronMain.position.set(side * 0.04, 0.03, 0);
+    pauldronMain.castShadow = true;
+    shoulderRoot.add(pauldronMain);
 
-  const rightPad = new THREE.Mesh(
-    new THREE.SphereGeometry(0.19, 12, 12),
-    mat.mithrilSilverMaterial.clone()
-  );
-  rightPad.position.set(-0.39, 0.29, 0);
-  rightPad.scale.set(1.22, 0.82, 1.22);
-  torso.add(rightPad);
+    const pauldronRim = new THREE.Mesh(
+      new THREE.TorusGeometry(0.17, 0.022, 8, 16, Math.PI * 1.2),
+      mat.mithrilGoldTrimMaterial
+    );
+    pauldronRim.rotation.x = Math.PI / 2;
+    pauldronRim.rotation.z = side === 1 ? -0.5 : Math.PI * 0.5;
+    pauldronRim.position.set(side * 0.03, -0.03, 0);
+    shoulderRoot.add(pauldronRim);
 
-  const rightPadTrim = new THREE.Mesh(
-    new THREE.TorusGeometry(0.18, 0.025, 6, 14),
-    mat.mithrilGoldTrimMaterial
-  );
-  rightPadTrim.rotation.x = Math.PI / 2;
-  rightPadTrim.position.set(-0.39, 0.26, 0);
-  torso.add(rightPadTrim);
+    // Upper Arm (Rerebrace)
+    const upperArmMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.082, 0.072, 0.3, 12),
+      mat.mithrilSilverMaterial.clone()
+    );
+    upperArmMesh.position.set(0, -0.16, 0);
+    upperArmMesh.castShadow = true;
+    shoulderRoot.add(upperArmMesh);
 
-  // 7. Articulated Mithril Vambraces & Gauntlets
-  const leftArm = new THREE.Group();
-  leftArm.position.set(0.38, 0.24, 0);
-  const leftArmMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.09, 0.075, 0.56, 12),
-    mat.mithrilSilverMaterial.clone()
-  );
-  leftArmMesh.position.set(0, -0.24, 0);
-  leftArmMesh.castShadow = true;
-  leftArm.add(leftArmMesh);
-  const leftBracer = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.092, 0.086, 0.2, 12),
-    mat.mithrilGoldTrimMaterial
-  );
-  leftBracer.position.set(0, -0.38, 0);
-  leftArm.add(leftBracer);
-  torso.add(leftArm);
+    // Elbow Joint (Couter) & Forearm Group
+    const forearmGroup = new THREE.Group();
+    forearmGroup.position.set(0, -0.31, 0);
+    shoulderRoot.add(forearmGroup);
 
-  const rightArm = new THREE.Group();
-  rightArm.position.set(-0.38, 0.24, 0);
-  const rightArmMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.09, 0.075, 0.56, 12),
-    mat.mithrilSilverMaterial.clone()
-  );
-  rightArmMesh.position.set(0, -0.24, 0);
-  rightArmMesh.castShadow = true;
-  rightArm.add(rightArmMesh);
-  const rightBracer = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.092, 0.086, 0.2, 12),
-    mat.mithrilGoldTrimMaterial
-  );
-  rightBracer.position.set(0, -0.38, 0);
-  rightArm.add(rightBracer);
+    const elbowCop = new THREE.Mesh(
+      new THREE.SphereGeometry(0.082, 10, 10),
+      mat.mithrilGoldTrimMaterial
+    );
+    forearmGroup.add(elbowCop);
 
+    const vambraceMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.074, 0.062, 0.28, 12),
+      mat.mithrilSilverMaterial.clone()
+    );
+    vambraceMesh.position.set(0, -0.15, 0);
+    vambraceMesh.castShadow = true;
+    forearmGroup.add(vambraceMesh);
+
+    const bracerTrim = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.078, 0.068, 0.12, 12),
+      mat.mithrilGoldTrimMaterial
+    );
+    bracerTrim.position.set(0, -0.2, 0);
+    forearmGroup.add(bracerTrim);
+
+    // Articulated Gauntlet Hand Group (Grips Weapon)
+    const handGroup = new THREE.Group();
+    handGroup.position.set(0, -0.3, 0.02);
+    forearmGroup.add(handGroup);
+
+    const palmMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.09, 0.11, 0.11),
+      mat.mithrilGoldTrimMaterial
+    );
+    palmMesh.castShadow = true;
+    handGroup.add(palmMesh);
+
+    const fingersMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.085, 0.065, 0.085),
+      mat.mithrilSilverMaterial
+    );
+    fingersMesh.position.set(0, -0.05, 0.03);
+    handGroup.add(fingersMesh);
+
+    return { shoulderRoot, forearmGroup, handGroup, pauldronMain };
+  };
+
+  const leftArmRig = buildArticulatedArm(1);
+  const rightArmRig = buildArticulatedArm(-1);
+
+  const leftArm = leftArmRig.shoulderRoot;
+  const leftForearm = leftArmRig.forearmGroup;
+  const leftHand = leftArmRig.handGroup;
+  const rightArm = rightArmRig.shoulderRoot;
+  const rightForearm = rightArmRig.forearmGroup;
+  const rightHand = rightArmRig.handGroup;
+
+  // Set natural combat ready bend in elbows
+  leftForearm.rotation.x = -0.38;
+  rightForearm.rotation.x = -0.52;
+
+  // Weapon Mount gripped directly inside the Right Gauntlet Hand!
   const weaponMount = new THREE.Group();
-  weaponMount.position.set(0, -0.48, 0.1);
-  rightArm.add(weaponMount);
-  torso.add(rightArm);
+  weaponMount.position.set(0, -0.02, 0.04);
+  weaponMount.rotation.x = 0.35; // Angled forward in a natural combat grip
+  rightHand.add(weaponMount);
 
-  // 8. Articulated Mithril Greaves & Sabatons
-  const leftLeg = new THREE.Group();
-  leftLeg.position.set(0.14, 0.65, 0);
-  const leftLegMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.11, 0.085, 0.65, 12),
-    mat.mithrilSilverMaterial.clone()
-  );
-  leftLegMesh.position.set(0, -0.32, 0);
-  leftLegMesh.castShadow = true;
-  leftLeg.add(leftLegMesh);
-  const leftBoot = new THREE.Mesh(
-    new THREE.BoxGeometry(0.17, 0.22, 0.28),
-    mat.mithrilGoldTrimMaterial
-  );
-  leftBoot.position.set(0, -0.56, 0.04);
-  leftLeg.add(leftBoot);
-  root.add(leftLeg);
+  // 7. Articulated Left & Right Legs (Hip -> Thigh -> Knee -> Shin/Greave -> Ankle/Sabaton Foot)
+  const buildArticulatedLeg = (side: 1 | -1) => {
+    const hipRoot = new THREE.Group();
+    hipRoot.position.set(side * 0.15, 0, 0);
+    pelvis.add(hipRoot);
 
-  const rightLeg = new THREE.Group();
-  rightLeg.position.set(-0.14, 0.65, 0);
-  const rightLegMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.11, 0.085, 0.65, 12),
-    mat.mithrilSilverMaterial.clone()
-  );
-  rightLegMesh.position.set(0, -0.32, 0);
-  rightLegMesh.castShadow = true;
-  rightLeg.add(rightLegMesh);
-  const rightBoot = new THREE.Mesh(
-    new THREE.BoxGeometry(0.17, 0.22, 0.28),
-    mat.mithrilGoldTrimMaterial
-  );
-  rightBoot.position.set(0, -0.56, 0.04);
-  rightLeg.add(rightBoot);
-  root.add(rightLeg);
+    // Thigh Cuisse
+    const thighMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.115, 0.095, 0.44, 12),
+      mat.mithrilSilverMaterial.clone()
+    );
+    thighMesh.position.set(0, -0.22, 0);
+    thighMesh.castShadow = true;
+    hipRoot.add(thighMesh);
 
-  const armorPads = [chestMesh, pectoralPlate, kiltMesh, leftPad, rightPad, helmDome];
+    // Knee Joint (Poleyn) & Shin Group
+    const shinGroup = new THREE.Group();
+    shinGroup.position.set(0, -0.44, 0);
+    hipRoot.add(shinGroup);
+
+    const kneeCop = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.095, 1),
+      mat.mithrilGoldTrimMaterial
+    );
+    kneeCop.position.set(0, 0, 0.03);
+    shinGroup.add(kneeCop);
+
+    const greaveMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.092, 0.075, 0.42, 12),
+      mat.mithrilSilverMaterial.clone()
+    );
+    greaveMesh.position.set(0, -0.21, 0);
+    greaveMesh.castShadow = true;
+    shinGroup.add(greaveMesh);
+
+    // Ankle & Sabaton Foot Group
+    const footGroup = new THREE.Group();
+    footGroup.position.set(0, -0.42, 0);
+    shinGroup.add(footGroup);
+
+    const sabatonBoot = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, 0.12, 0.28),
+      mat.mithrilGoldTrimMaterial
+    );
+    sabatonBoot.position.set(0, -0.04, 0.06);
+    sabatonBoot.castShadow = true;
+    footGroup.add(sabatonBoot);
+
+    return { hipRoot, shinGroup, footGroup, thighMesh, greaveMesh };
+  };
+
+  const leftLegRig = buildArticulatedLeg(1);
+  const rightLegRig = buildArticulatedLeg(-1);
+
+  const leftLeg = leftLegRig.hipRoot;
+  const leftShin = leftLegRig.shinGroup;
+  const leftFoot = leftLegRig.footGroup;
+  const rightLeg = rightLegRig.hipRoot;
+  const rightShin = rightLegRig.shinGroup;
+  const rightFoot = rightLegRig.footGroup;
+
+  const armorPads = [
+    chestMesh,
+    pectoralPlate,
+    leftArmRig.pauldronMain,
+    rightArmRig.pauldronMain,
+    helmDome,
+    leftLegRig.thighMesh,
+    rightLegRig.thighMesh,
+    leftLegRig.greaveMesh,
+    rightLegRig.greaveMesh,
+  ];
 
   const updateWeapon = (weaponId: WeaponId) => {
     while (weaponMount.children.length > 0) {
@@ -344,36 +531,58 @@ export function buildHunterModel(mat: MaterialCache, initialArmor: ArmorId = 'sc
     const def = WEAPON_REGISTRY[weaponId] || WEAPON_REGISTRY.flint_spear;
     const spearGroup = new THREE.Group();
 
-    const shaftGeo = new THREE.CylinderGeometry(0.034, 0.03, 2.4, 10);
+    // Grip Wrap around Hand Position (z = 0)
+    const gripWrap = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.042, 0.042, 0.36, 10),
+      gambesonMat
+    );
+    gripWrap.rotation.x = Math.PI / 2;
+    spearGroup.add(gripWrap);
+
+    // Counterweight Pommel behind hand (z = -0.68)
+    const pommel = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.065, 0),
+      mat.mithrilGoldTrimMaterial
+    );
+    pommel.position.set(0, 0, -0.68);
+    spearGroup.add(pommel);
+
+    // Ashwood / Mithril Spear Shaft held through the gauntlet hand
+    const shaftGeo = new THREE.CylinderGeometry(0.032, 0.028, 2.35, 12);
     shaftGeo.rotateX(Math.PI / 2);
     const shaftMat = new THREE.MeshStandardMaterial({
       color: def.color,
-      metalness: 0.65,
-      roughness: 0.3,
+      metalness: 0.55,
+      roughness: 0.38,
     });
     const shaft = new THREE.Mesh(shaftGeo, shaftMat);
-    shaft.position.set(0, 0, 0.55);
+    shaft.position.set(0, 0, 0.48);
+    shaft.castShadow = true;
     spearGroup.add(shaft);
 
-    const tipGeo = new THREE.ConeGeometry(0.105, 0.58, 8);
+    // Ornate Mithril Crossguard Wings
+    const crossguard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 0.055, 0.065),
+      mat.mithrilGoldTrimMaterial
+    );
+    crossguard.position.set(0, 0, 1.48);
+    spearGroup.add(crossguard);
+
+    // Faceted Diamond Spearhead Blade
+    const tipGeo = new THREE.ConeGeometry(0.095, 0.58, 6);
     tipGeo.rotateX(Math.PI / 2);
     const tipMat = new THREE.MeshStandardMaterial({
       color: def.accentColor,
       emissive: def.accentColor,
       emissiveIntensity: 0.45,
-      metalness: 0.85,
-      roughness: 0.15,
+      metalness: 0.88,
+      roughness: 0.16,
     });
     const tip = new THREE.Mesh(tipGeo, tipMat);
-    tip.position.set(0, 0, 1.88);
+    tip.scale.set(1.15, 0.48, 1.0);
+    tip.position.set(0, 0, 1.82);
+    tip.castShadow = true;
     spearGroup.add(tip);
-
-    const crossguard = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 0.06, 0.06),
-      mat.mithrilGoldTrimMaterial
-    );
-    crossguard.position.set(0, 0, 1.56);
-    spearGroup.add(crossguard);
 
     weaponMount.add(spearGroup);
   };
@@ -382,9 +591,9 @@ export function buildHunterModel(mat: MaterialCache, initialArmor: ArmorId = 'sc
     const def = ARMOR_REGISTRY[armorId] || ARMOR_REGISTRY.scavenger_rags;
     armorPads.forEach((mesh) => {
       const m = mesh.material as THREE.MeshStandardMaterial;
-      m.color.set(def.color || '#bae6fd');
-      m.metalness = 0.84;
-      m.roughness = 0.22;
+      m.color.set(def.color || '#cbd5e1');
+      m.metalness = 0.85;
+      m.roughness = 0.25;
     });
   };
 
@@ -393,18 +602,28 @@ export function buildHunterModel(mat: MaterialCache, initialArmor: ArmorId = 'sc
 
   return {
     root,
+    pelvis,
     torso,
     head,
     leftArm,
+    leftForearm,
+    leftHand,
     rightArm,
+    rightForearm,
+    rightHand,
     leftLeg,
+    leftShin,
+    leftFoot,
     rightLeg,
+    rightShin,
+    rightFoot,
     weaponMount,
     cape,
     wings: wingsGroup,
     wingsGroup,
     leftWing,
     rightWing,
+    contactShadow,
     armorPads,
     updateWeapon,
     updateArmor,
@@ -497,6 +716,22 @@ export function buildBeastModel(species: BeastSpecies, mat: MaterialCache): Beas
   const legs: THREE.Group[] = [];
   const accentMeshes: THREE.Mesh[] = [];
   const weakPointIndicators = new Map<string, THREE.Mesh>();
+
+  // Soft Radial Ground Contact Shadow Disc beneath Beast
+  if (species !== 'sky_dragon') {
+    const shadowRadius =
+      species === 'caldera_titan' || species === 'frostfang' || species === 'brontoshell'
+        ? 2.8
+        : 1.9;
+    const beastShadow = new THREE.Mesh(
+      new THREE.CircleGeometry(shadowRadius, 24),
+      mat.contactShadowMaterial
+    );
+    beastShadow.rotation.x = -Math.PI / 2;
+    beastShadow.position.set(0, 0.03, 0);
+    beastShadow.renderOrder = 1;
+    root.add(beastShadow);
+  }
 
   const skinMat = mat.beastSkin[species];
   const bellyMat = mat.beastUnderbelly[species];
@@ -1612,51 +1847,126 @@ export function buildEnvironmentShowcaseModel(id: EnvironmentModelId, mat: Mater
 }
 
 /**
- * Builds the Campfire Haven Workbench landmark.
+ * Builds the Campfire Haven Workbench landmark with warm flickering illumination and contact shadows.
  */
 export function buildCampfireWorkbench(mat: MaterialCache): THREE.Group {
   const group = new THREE.Group();
 
-  // Ring of stones
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.32, 0), mat.stoneMaterial);
-    stone.position.set(Math.cos(a) * 1.1, 0.18, Math.sin(a) * 1.1);
+  // Soft Contact Shadow under the Campfire Ring
+  const fireShadow = new THREE.Mesh(
+    new THREE.CircleGeometry(2.1, 24),
+    mat.contactShadowMaterial
+  );
+  fireShadow.rotation.x = -Math.PI / 2;
+  fireShadow.position.set(0, 0.02, 0);
+  group.add(fireShadow);
+
+  // Glowing Warm Ember Bed Disc
+  const emberBed = new THREE.Mesh(
+    new THREE.CircleGeometry(0.92, 18),
+    new THREE.MeshStandardMaterial({
+      color: 0xea580c,
+      emissive: 0xdc2626,
+      emissiveIntensity: 1.4,
+      roughness: 0.6,
+    })
+  );
+  emberBed.rotation.x = -Math.PI / 2;
+  emberBed.position.set(0, 0.04, 0);
+  group.add(emberBed);
+
+  // Ring of stones with warm inner rim
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.32, 1), mat.stoneMaterial);
+    stone.position.set(Math.cos(a) * 1.15, 0.18, Math.sin(a) * 1.15);
+    stone.scale.set(1.15, 0.78, 1.05);
+    stone.rotation.y = a;
+    stone.castShadow = true;
+    stone.receiveShadow = true;
     group.add(stone);
   }
 
-  // Logs & Fire
+  // Charred Split Logs & Multi-Layer Flickering Fire Cones
   for (let i = 0; i < 4; i++) {
-    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.5, 6), mat.woodMaterial);
-    log.rotation.z = Math.PI / 2;
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 1.55, 8), mat.woodMaterial);
+    log.rotation.z = Math.PI / 2 - 0.18;
     log.rotation.y = (i / 4) * Math.PI;
-    log.position.y = 0.16;
+    log.position.y = 0.2;
+    log.castShadow = true;
     group.add(log);
   }
 
-  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.48, 1.25, 7), mat.lavaMaterial);
-  flame.position.y = 0.65;
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.52, 1.35, 8), mat.lavaMaterial);
+  flame.position.y = 0.7;
   flame.name = 'campfire_flame';
   group.add(flame);
 
-  const fireLight = new THREE.PointLight(0xf97316, 3.5, 16);
-  fireLight.position.set(0, 1.5, 0);
+  const innerFlame = new THREE.Mesh(
+    new THREE.ConeGeometry(0.28, 0.95, 7),
+    new THREE.MeshStandardMaterial({
+      color: 0xfef08a,
+      emissive: 0xfacc15,
+      emissiveIntensity: 2.0,
+      roughness: 0.1,
+    })
+  );
+  innerFlame.position.set(0, 0.58, 0);
+  innerFlame.name = 'campfire_flame_inner';
+  group.add(innerFlame);
+
+  const fireLight = new THREE.PointLight(0xff7b24, 5.2, 22, 1.6);
+  fireLight.position.set(0, 1.65, 0);
+  fireLight.name = 'campfire_light';
   group.add(fireLight);
 
-  // Crafting Workbench Rack & Anvil beside fire
-  const table = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.9, 1.0), mat.woodMaterial);
-  table.position.set(2.8, 0.45, -0.8);
-  table.castShadow = true;
-  group.add(table);
+  // Crafting Workbench Rack & Anvil beside fire with Contact Shadow
+  const benchShadow = new THREE.Mesh(
+    new THREE.CircleGeometry(1.65, 18),
+    mat.contactShadowMaterial
+  );
+  benchShadow.rotation.x = -Math.PI / 2;
+  benchShadow.position.set(2.8, 0.025, -0.8);
+  group.add(benchShadow);
 
-  const anvil = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.48, 0.45), mat.obsidianMaterial);
-  anvil.position.set(2.8, 1.12, -0.8);
-  group.add(anvil);
+  // Sculpted Timber Workbench with Legs, Crossbars & Tool Rack
+  const tableTop = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.16, 1.05), mat.woodMaterial);
+  tableTop.position.set(2.8, 0.84, -0.8);
+  tableTop.castShadow = true;
+  tableTop.receiveShadow = true;
+  group.add(tableTop);
+
+  for (const lx of [-0.8, 0.8]) {
+    for (const lz of [-0.4, 0.4]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.82, 0.16), mat.woodMaterial);
+      leg.position.set(2.8 + lx, 0.41, -0.8 + lz);
+      leg.castShadow = true;
+      group.add(leg);
+    }
+  }
+
+  const anvilBase = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.26, 0.42), mat.stoneMaterial);
+  anvilBase.position.set(2.8, 1.05, -0.8);
+  group.add(anvilBase);
+
+  const anvilHorn = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.24, 0.36), mat.obsidianMaterial);
+  anvilHorn.position.set(2.8, 1.28, -0.8);
+  anvilHorn.castShadow = true;
+  group.add(anvilHorn);
 
   // Tribal Tents / Canopy Shelter behind campfire
-  const tent = new THREE.Mesh(new THREE.ConeGeometry(2.4, 2.8, 6), mat.woodMaterial);
+  const tentShadow = new THREE.Mesh(
+    new THREE.CircleGeometry(2.6, 20),
+    mat.contactShadowMaterial
+  );
+  tentShadow.rotation.x = -Math.PI / 2;
+  tentShadow.position.set(-3.4, 0.025, -2.5);
+  group.add(tentShadow);
+
+  const tent = new THREE.Mesh(new THREE.ConeGeometry(2.4, 2.8, 7), mat.woodMaterial);
   tent.position.set(-3.4, 1.4, -2.5);
   tent.castShadow = true;
+  tent.receiveShadow = true;
   group.add(tent);
 
   return group;
