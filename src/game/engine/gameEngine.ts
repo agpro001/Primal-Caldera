@@ -64,6 +64,7 @@ import {
 import { sound } from '../audio/soundEngine.ts';
 import { WeatherSystem } from './weatherSystem.ts';
 import { TrailSystem } from './trailSystem.ts';
+import { createSafeWebGLRenderer } from './safeRenderer.ts';
 
 export interface EngineCallbacks {
   onStatsChange: (stats: PlayerStats) => void;
@@ -337,22 +338,27 @@ export class GameEngine {
 
     const isHeadless = navigator.webdriver || /HeadlessChrome/i.test(navigator.userAgent);
 
-    // Renderer (Optimized for smooth 60 FPS on any device while keeping all textures & graphics intact)
-    this.renderer = new THREE.WebGLRenderer({
-      powerPreference: 'high-performance',
+    // Renderer (Resilient WebGL context acquisition + singleton reuse + fallback so context loss never crashes)
+    const width = Math.max(1, container.clientWidth || window.innerWidth || 800);
+    const height = Math.max(1, container.clientHeight || window.innerHeight || 600);
+    const { renderer, isWebGLAvailable } = createSafeWebGLRenderer(width, height, {
       antialias: !isHeadless,
-      stencil: false,
-      preserveDrawingBuffer: true,
+      isHeadless,
+      reuseMainSingleton: true,
     });
-    this.renderer.setSize(container.clientWidth, container.clientHeight);
+    this.renderer = renderer;
+    this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(isHeadless ? 1 : Math.min(window.devicePixelRatio, 1.25));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
-    this.renderer.shadowMap.enabled = !isHeadless;
+    this.renderer.shadowMap.enabled = isWebGLAvailable && !isHeadless;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.domElement.style.touchAction = 'none';
-    container.appendChild(this.renderer.domElement);
+    if (this.renderer.domElement.parentNode !== container) {
+      container.innerHTML = '';
+      container.appendChild(this.renderer.domElement);
+    }
 
     // Scene
     this.scene = new THREE.Scene();
@@ -360,18 +366,19 @@ export class GameEngine {
     this.scene.fog = new THREE.FogExp2(0x243242, 0.0068);
 
     // Camera
-    this.camera = new THREE.PerspectiveCamera(
-      56,
-      container.clientWidth / container.clientHeight,
-      0.1,
-      580
-    );
+    this.camera = new THREE.PerspectiveCamera(56, width / height, 0.1, 580);
 
-    // PMREM Environment
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.28;
-    pmrem.dispose();
+    // PMREM Environment (only when hardware/software WebGL context is active)
+    if (isWebGLAvailable) {
+      try {
+        const pmrem = new THREE.PMREMGenerator(this.renderer);
+        this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        this.scene.environmentIntensity = 0.28;
+        pmrem.dispose();
+      } catch {
+        // Ignore if context is constrained
+      }
+    }
 
     // Lighting
     this.hemiLight = new THREE.HemisphereLight(0xffedd5, 0x1f2937, 0.55);
@@ -466,9 +473,6 @@ export class GameEngine {
 
     // Seed initial beast footprints so Focus Vision [F] shows tracking trails immediately
     this.seedInitialFootprintTrails();
-
-    // Pre-warm renderer
-    this.renderer.compile(this.scene, this.camera);
 
     // Bind event listeners
     this.bindEvents();
@@ -3488,7 +3492,6 @@ export class GameEngine {
     window.removeEventListener('pointermove', this.onPointerMove);
     window.removeEventListener('pointerup', this.onPointerUp);
     this.materialCache.dispose();
-    this.renderer.dispose();
     if (this.renderer.domElement.parentNode === this.container) {
       this.container.removeChild(this.renderer.domElement);
     }

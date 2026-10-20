@@ -33,10 +33,67 @@ interface CachedAssetEntry {
 
 const assetCache = new Map<string, Promise<CachedAssetEntry>>();
 const geometryCache = new Map<string, THREE.BufferGeometry>();
+let assetStaggerCount = 0;
+
+/**
+ * Prevents GPU VRAM exhaustion & WebGL context loss ("Web page caused context loss and was blocked")
+ * by capping oversized embedded 4K/8K textures inside 15MB-21MB GLB/USDZ files to max 1024x1024
+ * once upon load while preserving every model's exact visual textures, colors, and materials.
+ */
+function optimizeLoadedSceneForGPU(root: THREE.Object3D): void {
+  const processedTextures = new Set<THREE.Texture>();
+  const maxTexDim = 1024;
+
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.material) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of materials) {
+      const stdMat = mat as unknown as Record<string, unknown>;
+      const texKeys = [
+        'map',
+        'normalMap',
+        'roughnessMap',
+        'metalnessMap',
+        'aoMap',
+        'emissiveMap',
+        'bumpMap',
+      ];
+      for (const key of texKeys) {
+        const tex = stdMat[key] as THREE.Texture | undefined;
+        if (!tex || !tex.image || processedTextures.has(tex)) continue;
+        processedTextures.add(tex);
+        const img = tex.image as { width?: number; height?: number };
+        const w = img.width || 0;
+        const h = img.height || 0;
+        if (w > maxTexDim || h > maxTexDim) {
+          try {
+            const scale = maxTexDim / Math.max(w, h);
+            const targetW = Math.max(64, Math.floor(w * scale));
+            const targetH = Math.max(64, Math.floor(h * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = targetW;
+            canvas.height = targetH;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(tex.image as CanvasImageSource, 0, 0, targetW, targetH);
+              tex.image = canvas;
+              tex.needsUpdate = true;
+            }
+          } catch {
+            // Keep original image if not drawable
+          }
+        }
+      }
+    }
+  });
+}
 
 export function load3DAssetCached(url: string): Promise<CachedAssetEntry> {
   const existing = assetCache.get(url);
   if (existing) return existing;
+
+  const staggerDelayMs = (assetStaggerCount++ % 8) * 18;
 
   const promise = new Promise<CachedAssetEntry>((resolve, reject) => {
     const isUsdz = url.toLowerCase().endsWith('.usdz');
@@ -44,7 +101,8 @@ export function load3DAssetCached(url: string): Promise<CachedAssetEntry> {
       usdzLoader.load(
         url,
         (group) => {
-          resolve({ scene: group, animations: [] });
+          optimizeLoadedSceneForGPU(group);
+          window.setTimeout(() => resolve({ scene: group, animations: [] }), staggerDelayMs);
         },
         undefined,
         (err) => reject(err)
@@ -53,10 +111,16 @@ export function load3DAssetCached(url: string): Promise<CachedAssetEntry> {
       gltfLoader.load(
         url,
         (gltf) => {
-          resolve({
-            scene: gltf.scene || new THREE.Group(),
-            animations: gltf.animations || [],
-          });
+          const scene = gltf.scene || new THREE.Group();
+          optimizeLoadedSceneForGPU(scene);
+          window.setTimeout(
+            () =>
+              resolve({
+                scene,
+                animations: gltf.animations || [],
+              }),
+            staggerDelayMs
+          );
         },
         undefined,
         (err) => reject(err)
@@ -855,10 +919,13 @@ export function buildHunterModel(
     root.add(articulatedBodyGroup);
   }
 
-  // S.W.A.T. Operator Muzzle Flash PointLight attached to gunMount
+  // S.W.A.T. Operator Muzzle Flash PointLight attached to gunMount (visible only during muzzle flash)
   const muzzleLight = new THREE.PointLight(0x38bdf8, 0, 14);
   muzzleLight.position.set(0, 0.08, 0.85);
-  gunMount.add(muzzleLight);
+  muzzleLight.visible = false;
+  if (characterId === 'swat_operator') {
+    gunMount.add(muzzleLight);
+  }
 
   const modelVisualWrapper = new THREE.Group();
   modelVisualWrapper.name = 'ModelVisualWrapper';
@@ -1431,7 +1498,7 @@ export function populateForestBiomeGrid(
 }
 
 export function buildTribalNPCModel(_npcId: NPCId, mat: MaterialCache): THREE.Group {
-  const rig = buildHunterModel(mat, 'raptor_stalker_garb', 'bulky_knight');
+  const rig = buildHunterModel(mat, 'raptor_stalker_garb', 'demon_hunter');
   return rig.root;
 }
 

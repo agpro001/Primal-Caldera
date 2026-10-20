@@ -25,6 +25,7 @@ import {
   buildEnvironmentShowcaseModel,
   createSculptedOrganicGeometry,
 } from '../game/engine/assetLoaderAndRigging.ts';
+import { createSafeWebGLRenderer } from '../game/engine/safeRenderer.ts';
 import {
   generateReferenceImageDataUrl,
   REFERENCE_ART_SPECS,
@@ -94,10 +95,13 @@ export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
     camera.position.set(0, 3.4, 9.2);
     camera.lookAt(0, 1.8, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    const { renderer, isWebGLAvailable } = createSafeWebGLRenderer(width, height, {
+      antialias: true,
+      reusePreviewSingleton: true,
+    });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.shadowMap.enabled = isWebGLAvailable;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
@@ -262,7 +266,9 @@ export const BeastopediaModal: React.FC<BeastopediaModalProps> = ({
       domEl.removeEventListener('mousedown', onDown);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      renderer.dispose();
+      if (domEl.parentNode === container) {
+        container.removeChild(domEl);
+      }
       matCache.dispose();
     };
   }, [category, selectedSpecies, selectedCharId, selectedEnvId, viewMode]);
