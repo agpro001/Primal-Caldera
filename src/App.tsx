@@ -317,11 +317,19 @@ export function App() {
           }}
           onToggleDayNight={() => engineRef.current?.advanceTimeOfDay(6)}
           onStrikeGesture={(gesture) => engineRef.current?.performStrike(gesture)}
+          onTriggerSkill={() => engineRef.current?.triggerCharacterSkill()}
+          onToggleSpacecraft={() => engineRef.current?.toggleSpaceFighterBoarding()}
           onAttack={() => engineRef.current?.performStrike('tap')}
           onChargeRelease={() => engineRef.current?.releaseHeavyThrust()}
           onJump={() => engineRef.current?.jumpPlayer()}
           onToggleFlight={() => engineRef.current?.toggleFlightMode()}
-          onDodge={() => engineRef.current?.startDodgeRoll()}
+          onDodge={() => {
+            if (engineRef.current?.isPilotingSpaceFighter) {
+              engineRef.current.spaceFighterBoostActive = !engineRef.current.spaceFighterBoostActive;
+            } else {
+              engineRef.current?.startDodgeRoll();
+            }
+          }}
           onEatFood={() => engineRef.current?.eatFoodRation()}
           onDrinkWater={() => engineRef.current?.drinkWaterCanteen()}
           onConsumeEgg={() => engineRef.current?.useCollectedEgg()}

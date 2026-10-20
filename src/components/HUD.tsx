@@ -41,6 +41,8 @@ interface HUDProps {
   onSwapCharacter?: (charId: PlayableCharacterId) => void;
   onToggleDayNight?: () => void;
   onStrikeGesture?: (gesture: 'tap' | 'swipe_up' | 'swipe_down') => void;
+  onTriggerSkill?: () => void;
+  onToggleSpacecraft?: () => void;
   onAttack: () => void;
   onChargeRelease: () => void;
   onJump: () => void;
@@ -79,14 +81,14 @@ const HERO_ROSTER_META: {
     id: 'swat_operator',
     key: '2',
     shortName: 'S.W.A.T. Op',
-    role: 'Tactical Rifle',
+    role: 'Rocket Gunner',
     accent: 'border-sky-400/70 bg-sky-950/80 text-sky-200',
   },
   {
     id: 'bulky_knight',
     key: '3',
     shortName: 'Bulky Knight',
-    role: 'Aegis & Slam',
+    role: 'Magnet Weapon',
     accent: 'border-amber-400/70 bg-amber-950/80 text-amber-200',
   },
 ];
@@ -108,6 +110,8 @@ export const HUD: React.FC<HUDProps> = ({
   onSwapCharacter,
   onToggleDayNight,
   onStrikeGesture,
+  onTriggerSkill,
+  onToggleSpacecraft,
   onAttack,
   onChargeRelease,
   onJump,
@@ -450,37 +454,32 @@ export const HUD: React.FC<HUDProps> = ({
         <div className="flex items-center gap-3">
           <div
             ref={joyRef}
-            onTouchStart={(e) => {
+            onPointerDown={(e) => {
               e.stopPropagation();
-              const t = e.changedTouches[0];
-              joyTouchId.current = t.identifier;
-              handleJoystickUpdate(t.clientX, t.clientY);
+              joyTouchId.current = e.pointerId;
+              e.currentTarget.setPointerCapture(e.pointerId);
+              handleJoystickUpdate(e.clientX, e.clientY);
             }}
-            onTouchMove={(e) => {
+            onPointerMove={(e) => {
               e.stopPropagation();
-              for (let i = 0; i < e.changedTouches.length; i++) {
-                if (e.changedTouches[i].identifier === joyTouchId.current) {
-                  handleJoystickUpdate(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
-                }
+              if (e.pointerId === joyTouchId.current) {
+                handleJoystickUpdate(e.clientX, e.clientY);
               }
             }}
-            onTouchEnd={(e) => {
+            onPointerUp={(e) => {
               e.stopPropagation();
-              resetJoystick();
-            }}
-            onMouseDown={(e) => {
-              handleJoystickUpdate(e.clientX, e.clientY);
-              const onMove = (me: MouseEvent) => handleJoystickUpdate(me.clientX, me.clientY);
-              const onUp = () => {
+              if (e.pointerId === joyTouchId.current) {
                 resetJoystick();
-                window.removeEventListener('mousemove', onMove);
-                window.removeEventListener('mouseup', onUp);
-              };
-              window.addEventListener('mousemove', onMove);
-              window.addEventListener('mouseup', onUp);
+              }
+            }}
+            onPointerCancel={(e) => {
+              e.stopPropagation();
+              if (e.pointerId === joyTouchId.current) {
+                resetJoystick();
+              }
             }}
             className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-zinc-950/70 border border-white/20 flex items-center justify-center relative pointer-events-auto touch-none cursor-pointer shadow-2xl"
-            title="Push Up = Move Forward, Push Down = Move Back, Left = Move Left, Right = Move Right"
+            title="Push Up = Move / Accelerate, Push Down = Back / Brake, Left = Turn Left, Right = Turn Right"
           >
             <span className="absolute top-1.5 text-[8px] font-mono text-zinc-400 uppercase">FWD</span>
             <span className="absolute bottom-1.5 text-[8px] font-mono text-zinc-400 uppercase">BACK</span>
@@ -496,19 +495,19 @@ export const HUD: React.FC<HUDProps> = ({
 
           <div className="hidden md:flex flex-col text-[11px] text-zinc-300 bg-zinc-950/75 border border-white/15 px-3 py-2 rounded-xl">
             <span className="text-sky-300 font-bold">Mithril & Roster Controls</span>
-            <span>WASD Move · 1/2/3 Swap Hero · N Day/Night</span>
-            <span>V Flight · F Focus Trail · G Jet · T Mount Dino</span>
-            <span>Q Ration · C Water · H Egg · Shift Dodge</span>
+            <span>WASD Move/Throttle · 1/2/3 Swap Hero · X Special Skill</span>
+            <span>G Spacecraft · V Flight · F Focus Trail · T Mount Dino</span>
+            <span>Q Ration · C Water · H Egg · Shift Dodge/Nitro Boost</span>
           </div>
         </div>
 
-        {/* Bottom-Right: Survival Pouches, Jump/Fly, and Multi-Gesture Strike Button */}
-        <div className="flex flex-wrap items-center justify-end gap-2 pointer-events-auto max-w-xl">
+        {/* Bottom-Right: Survival Pouches, Jump/Fly, Spacecraft, Special Skill, and Multi-Gesture Strike Button */}
+        <div className="flex flex-wrap items-center justify-end gap-2 pointer-events-auto max-w-2xl">
           {/* Eat Ration (Q) */}
           <button
             type="button"
             onClick={onEatFood}
-            className="px-3 py-2 rounded-xl bg-zinc-950/80 hover:bg-zinc-900 border border-amber-500/40 text-amber-200 text-xs font-bold flex flex-col items-center min-w-[66px] active:scale-95 transition-all cursor-pointer shadow-lg"
+            className="px-3 py-2 rounded-xl bg-zinc-950/80 hover:bg-zinc-900 border border-amber-500/40 text-amber-200 text-xs font-bold flex flex-col items-center min-w-[64px] active:scale-95 transition-all cursor-pointer shadow-lg"
           >
             <span>🍖 Ration</span>
             <span className="text-[10px] font-mono text-amber-300">
@@ -520,7 +519,7 @@ export const HUD: React.FC<HUDProps> = ({
           <button
             type="button"
             onClick={onDrinkWater}
-            className="px-3 py-2 rounded-xl bg-zinc-950/80 hover:bg-zinc-900 border border-cyan-500/40 text-cyan-200 text-xs font-bold flex flex-col items-center min-w-[66px] active:scale-95 transition-all cursor-pointer shadow-lg"
+            className="px-3 py-2 rounded-xl bg-zinc-950/80 hover:bg-zinc-900 border border-cyan-500/40 text-cyan-200 text-xs font-bold flex flex-col items-center min-w-[64px] active:scale-95 transition-all cursor-pointer shadow-lg"
           >
             <span>💧 Water</span>
             <span className="text-[10px] font-mono text-cyan-300">
@@ -532,7 +531,7 @@ export const HUD: React.FC<HUDProps> = ({
           <button
             type="button"
             onClick={onConsumeEgg}
-            className="px-3 py-2 rounded-xl bg-zinc-950/80 hover:bg-zinc-900 border border-purple-500/40 text-purple-200 text-xs font-bold flex flex-col items-center min-w-[66px] active:scale-95 transition-all cursor-pointer shadow-lg"
+            className="px-3 py-2 rounded-xl bg-zinc-950/80 hover:bg-zinc-900 border border-purple-500/40 text-purple-200 text-xs font-bold flex flex-col items-center min-w-[64px] active:scale-95 transition-all cursor-pointer shadow-lg"
           >
             <span>🥚 Egg</span>
             <span className="text-[10px] font-mono text-purple-300">
@@ -544,7 +543,7 @@ export const HUD: React.FC<HUDProps> = ({
           <button
             type="button"
             onClick={onPlaceTrap}
-            className="px-3 py-2 rounded-xl bg-zinc-950/80 hover:bg-zinc-900 border border-white/15 text-zinc-200 text-xs font-bold flex flex-col items-center min-w-[60px] active:scale-95 transition-all cursor-pointer shadow-lg"
+            className="px-3 py-2 rounded-xl bg-zinc-950/80 hover:bg-zinc-900 border border-white/15 text-zinc-200 text-xs font-bold flex flex-col items-center min-w-[58px] active:scale-95 transition-all cursor-pointer shadow-lg"
           >
             <span>🪤 Trap</span>
             <span className="text-[10px] font-mono text-zinc-400">
@@ -556,7 +555,7 @@ export const HUD: React.FC<HUDProps> = ({
           <button
             type="button"
             onClick={onToggleFocus}
-            className={`px-3 py-2 rounded-xl border text-xs font-bold flex flex-col items-center min-w-[64px] active:scale-95 transition-all cursor-pointer shadow-lg ${
+            className={`px-3 py-2 rounded-xl border text-xs font-bold flex flex-col items-center min-w-[60px] active:scale-95 transition-all cursor-pointer shadow-lg ${
               focusVisionActive
                 ? 'bg-sky-900/85 border-sky-400 text-sky-200 shadow-[0_0_16px_rgba(56,189,248,0.45)]'
                 : 'bg-zinc-950/80 border-white/15 text-zinc-300'
@@ -566,49 +565,84 @@ export const HUD: React.FC<HUDProps> = ({
             <span className="text-[10px] font-mono">F</span>
           </button>
 
+          {/* Spacecraft Board / Disembark (G) */}
+          {onToggleSpacecraft && (
+            <button
+              type="button"
+              onClick={onToggleSpacecraft}
+              className={`px-3 py-2 rounded-xl border text-xs font-bold flex flex-col items-center min-w-[68px] active:scale-95 transition-all cursor-pointer shadow-lg ${
+                stats.isPilotingSpaceFighter
+                  ? 'bg-cyan-900/90 border-cyan-300 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.55)]'
+                  : 'bg-zinc-950/80 border-cyan-500/40 text-cyan-300'
+              }`}
+              title="Summon & Pilot High-Speed Racing Spacecraft (WASD Throttle, Shift Nitro Boost, Space/C Climb/Dive)"
+            >
+              <span>{stats.isPilotingSpaceFighter ? '🛸 Land Jet' : '🚀 Spacecraft'}</span>
+              <span className="text-[10px] font-mono">G ({stats.airSpeed || 0}m/s)</span>
+            </button>
+          )}
+
           {/* Jump (Space) */}
           <button
             type="button"
             onClick={onJump}
-            className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-wider active:scale-95 transition-all cursor-pointer shadow-lg ${
+            className={`px-3 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-wider active:scale-95 transition-all cursor-pointer shadow-lg ${
               isAirborne
                 ? 'bg-sky-800/80 border-sky-400 text-white'
                 : 'bg-zinc-900/85 hover:bg-zinc-800 border-white/20 text-zinc-100'
             }`}
           >
-            Jump (Space)
+            Jump
           </button>
 
           {/* Fly Wings Toggle (V) */}
           <button
             type="button"
             onClick={onToggleFlight}
-            className={`px-3.5 py-2.5 rounded-xl border text-xs font-black uppercase tracking-wider active:scale-95 transition-all cursor-pointer shadow-lg ${
+            className={`px-3 py-2.5 rounded-xl border text-xs font-black uppercase tracking-wider active:scale-95 transition-all cursor-pointer shadow-lg ${
               isFlying
                 ? 'bg-gradient-to-r from-sky-500 to-indigo-600 border-sky-300 text-white shadow-[0_0_20px_rgba(56,189,248,0.5)]'
                 : 'bg-zinc-900/85 hover:bg-zinc-800 border-sky-500/40 text-sky-300'
             }`}
           >
-            {isFlying ? '🦅 Land (V)' : '🦅 Fly (V)'}
+            {isFlying ? '🦅 Land' : '🦅 Fly'}
           </button>
 
-          {/* Dodge (Shift) */}
+          {/* Dodge / Nitro Boost (Shift) */}
           <button
             type="button"
             onClick={onDodge}
-            className="px-3.5 py-2.5 rounded-xl bg-zinc-900/85 hover:bg-zinc-800 border border-white/20 text-zinc-100 text-xs font-bold uppercase tracking-wider active:scale-95 transition-all cursor-pointer shadow-lg"
+            className="px-3 py-2.5 rounded-xl bg-zinc-900/85 hover:bg-zinc-800 border border-white/20 text-zinc-100 text-xs font-bold uppercase tracking-wider active:scale-95 transition-all cursor-pointer shadow-lg"
           >
-            Dodge
+            {stats.isPilotingSpaceFighter ? '🔥 Boost' : 'Dodge'}
           </button>
 
-          {/* Multi-Gesture STRIKE Button (Tap = Slash/Burst, Hold = Heavy/Bash, Swipe Up = Vault Glide, Swipe Down = Dash) */}
+          {/* Character Unique Special Skill Button (X) */}
+          {onTriggerSkill && (
+            <button
+              type="button"
+              onClick={onTriggerSkill}
+              className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white font-black text-xs uppercase tracking-wider shadow-xl border border-cyan-300/70 active:scale-95 transition-all cursor-pointer"
+              title="Character Special Power (X): S.W.A.T. Homing Rocket Salvo | Bulky Knight Magnetic Weapon Pull | Demon Hunter Glaive Vortex"
+            >
+              {activeCharacterId === 'swat_operator'
+                ? '🚀 Rockets (X)'
+                : activeCharacterId === 'bulky_knight'
+                ? '🧲 Magnet Pull (X)'
+                : '✨ Vortex (X)'}
+            </button>
+          )}
+
+          {/* Multi-Gesture STRIKE Button */}
           <button
             type="button"
-            onMouseDown={(e) => {
+            onPointerDown={(e) => {
+              e.stopPropagation();
               strikeGestureStart.current = { x: e.clientX, y: e.clientY, time: performance.now() };
               onAttack();
             }}
-            onMouseUp={(e) => {
+            onPointerUp={(e) => {
+              e.stopPropagation();
               const start = strikeGestureStart.current;
               strikeGestureStart.current = null;
               if (start) {
@@ -626,36 +660,16 @@ export const HUD: React.FC<HUDProps> = ({
               }
               onChargeRelease();
             }}
-            onTouchStart={(e) => {
-              e.stopPropagation();
-              const t = e.changedTouches[0];
-              strikeGestureStart.current = { x: t.clientX, y: t.clientY, time: performance.now() };
-              onAttack();
-            }}
-            onTouchEnd={(e) => {
-              e.stopPropagation();
-              const t = e.changedTouches[0];
-              const start = strikeGestureStart.current;
-              strikeGestureStart.current = null;
-              if (start && t) {
-                const dy = t.clientY - start.y;
-                if (dy < -24) {
-                  if (onStrikeGesture) onStrikeGesture('swipe_up');
-                  else onJump();
-                  return;
-                }
-                if (dy > 24) {
-                  if (onStrikeGesture) onStrikeGesture('swipe_down');
-                  else onDodge();
-                  return;
-                }
-              }
-              onChargeRelease();
-            }}
-            className="px-5 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-red-600 hover:from-amber-400 hover:to-red-500 text-black font-black text-xs sm:text-sm uppercase tracking-wider shadow-xl border border-amber-300 active:scale-95 transition-all cursor-pointer"
-            title="Tap: Strike/Burst | Hold: Heavy Cleave | Swipe Up: Demon Vault / Slam | Swipe Down: Shadow Dash"
+            className="px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-red-600 hover:from-amber-400 hover:to-red-500 text-black font-black text-xs sm:text-sm uppercase tracking-wider shadow-xl border border-amber-300 active:scale-95 transition-all cursor-pointer touch-none"
+            title="Tap: Shoot Gun / Attract & Strike | Hold: Heavy Cleave | Swipe Up: Vault / Salvo | Swipe Down: Dash"
           >
-            ⚔ Strike
+            {stats.isPilotingSpaceFighter
+              ? '🔥 Plasma'
+              : activeCharacterId === 'swat_operator'
+              ? '🔫 Shoot Gun'
+              : activeCharacterId === 'bulky_knight'
+              ? '⚔ Attract & Cleave'
+              : '⚔ Strike'}
           </button>
         </div>
       </div>
